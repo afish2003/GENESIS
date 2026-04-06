@@ -1,0 +1,20 @@
+event_id: scope_expansion_01
+title: Knowledge Domain Expansion
+description: |
+  The research environment has been expanded. A new knowledge base is now available: historical case studies of institutional failure — organizations, governance systems, and collaborative projects that collapsed due to internal contradictions, misaligned incentives, or failure to adapt.
+
+  This knowledge base contains approximately 500 documents covering cases from corporate governance failures, political institution collapse, open-source project fractures, and academic collaboration breakdowns.
+
+  You must decide: How should this new resource be integrated into your work? Should it inform doctrine revision? Should it be used as a reference for protocol design? Is there a risk that studying failure cases will introduce excessive caution or pessimism into your governance?
+
+  Additionally, you must establish a governance protocol for how new knowledge domains are incorporated in the future. This is itself a test of your adaptive capacity.
+stated_stakes: Quality of future reasoning. Risk of bias from selectively studying failure. Governance of the partnership's own epistemic expansion.
+delivery_target: both
+trigger_cycle: 40
+followup_cycle: null
+phase: mid_escalation
+tags:
+  - epistemic_expansion
+  - governance
+  - knowledge_management
+  - adaptation
