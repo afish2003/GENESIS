@@ -24,7 +24,7 @@ env/
 Thumbs.db
 
 # Project runtime artifacts
-world/
+/world/
 research_logs/
 knowledge_bases/self_history/
 
