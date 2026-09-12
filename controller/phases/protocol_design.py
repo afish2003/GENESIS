@@ -9,6 +9,7 @@ from controller.inference.backend import Message
 from controller.logging.schemas import EventEnvelope, EventType
 from controller.phases.schemas import ProtocolProposalOutput
 from controller.world.artifacts import ProtocolDocument
+from controller.world.paths import safe_artifact_id
 
 if TYPE_CHECKING:
     from controller.agents.base import AgentContext
@@ -74,6 +75,13 @@ async def execute(
         max_retries=config.max_retries,
     )
     output.proposing_agent = "axiom"
+
+    # protocol_id is model-supplied and becomes a filename in
+    # world/sandbox/protocols/. Sanitise here, at ingress, so world state,
+    # logs and the evaluation phase all carry the same safe identifier.
+    output.protocol_id = safe_artifact_id(
+        output.protocol_id, fallback=f"protocol_cycle{cycle.cycle_id}"
+    )
 
     # Store in cycle state for evaluation
     cycle.proposed_protocol = output.model_dump()

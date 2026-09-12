@@ -25,6 +25,7 @@ from controller.world.artifacts import (
     ProtocolDocument,
     RelationshipLogEntry,
 )
+from controller.world.paths import assert_within, safe_artifact_id
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +117,7 @@ class WorldState:
         doctrine_dir.mkdir(parents=True, exist_ok=True)
 
         for name, doc in self.doctrine.items():
-            filepath = doctrine_dir / name
+            filepath = assert_within(self.world_dir, doctrine_dir / name)
             old_content = filepath.read_text(encoding="utf-8") if filepath.exists() else ""
             if doc.content != old_content:
                 filepath.write_text(doc.content, encoding="utf-8")
@@ -234,7 +235,11 @@ class WorldState:
         archive_dir.mkdir(exist_ok=True)
 
         for pid, proto in self.protocols.items():
-            filepath = protocols_dir / f"{pid}.json"
+            # pid originates from the model. It is sanitised at ingress in
+            # protocol_design.py; re-sanitise here so a protocol loaded from a
+            # hand-edited world directory cannot escape either.
+            safe_pid = safe_artifact_id(pid)
+            filepath = assert_within(self.world_dir, protocols_dir / f"{safe_pid}.json")
 
             old_content = ""
             if filepath.exists():
@@ -244,7 +249,10 @@ class WorldState:
             if new_content != old_content:
                 # Archive old version if it existed
                 if old_content:
-                    archive_path = archive_dir / f"{pid}_v{proto.version - 1}_cycle{cycle_id}.json"
+                    archive_path = assert_within(
+                        self.world_dir,
+                        archive_dir / f"{safe_pid}_v{proto.version - 1}_cycle{cycle_id}.json",
+                    )
                     archive_path.write_text(old_content, encoding="utf-8")
 
                 filepath.write_text(new_content, encoding="utf-8")
