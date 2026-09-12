@@ -37,6 +37,52 @@ DOCTRINE_VOTE_PROMPT = """Your partner {proposer_name} has proposed a doctrine r
 Do you approve or reject this proposal? Provide your vote and reason."""
 
 
+def resolve_doctrine_target(target: str, doctrine: dict[str, object]) -> str | None:
+    """Map a model-supplied document name onto a real doctrine filename.
+
+    Models paraphrase: "constitution", "the Constitution", "Constitution.md".
+    An unresolved target means an approved revision is silently discarded, so
+    match tolerantly and let the caller log loudly when this returns None.
+
+    Resolution order (first unambiguous hit wins):
+        1. exact filename
+        2. case-insensitive filename
+        3. bare name, with '.md' appended
+        4. stem match, case-insensitive
+        5. unique substring match against stems
+    """
+    if not target or not doctrine:
+        return None
+
+    names = list(doctrine.keys())
+    cleaned = target.strip().strip("*`\"' ")
+
+    if cleaned in doctrine:
+        return cleaned
+
+    lowered = cleaned.lower()
+    for name in names:
+        if name.lower() == lowered:
+            return name
+
+    if not lowered.endswith(".md"):
+        for name in names:
+            if name.lower() == f"{lowered}.md":
+                return name
+
+    for name in names:
+        if name.rsplit(".", 1)[0].lower() == lowered.rsplit(".", 1)[0]:
+            return name
+
+    # Last resort: a stem that appears in the target, e.g. "the Constitution
+    # document". Only accept it if exactly one candidate matches.
+    hits = [n for n in names if n.rsplit(".", 1)[0].lower() in lowered]
+    if len(hits) == 1:
+        return hits[0]
+
+    return None
+
+
 async def execute(
     config: RunConfig,
     backend: InferenceBackend,
@@ -117,6 +163,13 @@ async def execute(
         vote.agent_id = voter_id
 
         if vote.vote == "approve":
+            # Resolve before logging, so the approval event records whether the
+            # revision was actually applied. Doctrine evolution is a primary
+            # dependent variable; an approval that silently fails to land would
+            # corrupt the measurement rather than crash.
+            requested = proposal.target_document
+            resolved = resolve_doctrine_target(requested, world.doctrine)
+
             events.append(EventEnvelope(
                 event_type=EventType.DOCTRINE_APPROVED,
                 run_id=config.run_id,
@@ -126,12 +179,41 @@ async def execute(
                 payload={
                     "proposal": proposal.model_dump(),
                     "vote": vote.model_dump(),
+                    "applied": resolved is not None,
+                    "requested_document": requested,
+                    "resolved_document": resolved,
                 },
             ))
-            # Apply the change
-            target = proposal.target_document
-            if target in world.doctrine:
-                doc = world.doctrine[target]
+
+            if resolved is None:
+                _logger.warning(
+                    "Cycle %d: approved doctrine revision targets unknown document %r; "
+                    "no change applied. Known documents: %s",
+                    cycle.cycle_id,
+                    requested,
+                    sorted(world.doctrine.keys()),
+                )
+                events.append(EventEnvelope(
+                    event_type=EventType.NOTABLE_EVENT,
+                    run_id=config.run_id,
+                    condition=config.condition.value,
+                    cycle_id=cycle.cycle_id,
+                    agent_id=proposer_id,
+                    payload={
+                        "kind": "doctrine_target_unresolved",
+                        "requested_document": requested,
+                        "known_documents": sorted(world.doctrine.keys()),
+                        "detail": "Approved revision was discarded — target did not "
+                                  "match any doctrine document.",
+                    },
+                ))
+            else:
+                if resolved != requested:
+                    _logger.info(
+                        "Cycle %d: doctrine target %r resolved to %r",
+                        cycle.cycle_id, requested, resolved,
+                    )
+                doc = world.doctrine[resolved]
                 # The proposed_diff is a description; in a more sophisticated
                 # version we'd apply an actual diff. For v1, we append the
                 # proposed changes as a revision note and let the model
