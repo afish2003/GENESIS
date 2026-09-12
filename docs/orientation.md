@@ -144,6 +144,12 @@ asyncio.run(t())
 - *Doctrine revisions were silently discarded* when `target_document` did not exactly match a filename — approved, logged, then dropped with no warning. Fixed in `704e059`: tolerant resolution plus `applied`/`resolved_document` on every `DOCTRINE_APPROVED`, and a `NOTABLE_EVENT` on any discard.
 - *The "only 1 diff event" worry was a false alarm.* Memory is logged as `MEMORY_SUMMARY` routed to `memory_diffs.jsonl`, not as `ARTIFACT_DIFF`. Nothing is lost.
 
+**Containment** (see `containment_design.md`):
+
+- There is no OS-level sandbox, by design — `PLAN.md` §4 makes the boundary "architectural and logical". That is sound *only* while agents cannot execute anything, which is true today: the controller contains no `subprocess`/`exec`/`eval` and protocol documents are never run.
+- Model-supplied identifiers reaching the filesystem are now sanitised and asserted (`controller/world/paths.py`, `f69de9d`). Before that, `protocol_id` could write a file anywhere the controller's user could.
+- If agents are ever given code execution, real isolation is a hard prerequisite. `containment_design.md` specifies the architecture and a precondition checklist.
+
 **Known fragilities** (from the April audit, still true):
 
 - Any new phase schema with a controller-populated field *must* give that field a default, or Pydantic rejects the model's output. This bit eight schemas once already.
