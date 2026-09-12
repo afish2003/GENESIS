@@ -39,6 +39,19 @@ class Framing(str, Enum):
     UNDISCLOSED = "undisclosed"
 
 
+class SandboxBackend(str, Enum):
+    """Isolation for agent-authored code.
+
+    NULL refuses every request and is the default — execution must never be
+    reachable by accident. DOCKER is the hardened container runner described
+    in docs/containment_design.md, and is gated on that document's
+    precondition checklist.
+    """
+
+    NULL = "null"
+    DOCKER = "docker"
+
+
 class Backend(str, Enum):
     """Which inference backend to construct.
 
@@ -128,6 +141,15 @@ class RunConfig(BaseModel):
         description="disclosed | undisclosed — whether agents are told they are studied",
     )
 
+    # Code execution — off by default; see docs/containment_design.md
+    sandbox_backend: SandboxBackend = Field(
+        default=SandboxBackend.NULL,
+        description="null refuses all execution; docker runs the hardened container",
+    )
+    sandbox_image: str = Field(default="python:3.11-slim")
+    sandbox_runtime: str = Field(default="docker", description="docker | podman")
+    sandbox_memory: str = Field(default="512m")
+
     # Monitoring — deterministic, no inference, invisible to the agents
     watchdog_enabled: bool = Field(
         default=True,
@@ -205,6 +227,7 @@ def load_config(
         "API_JSON_MODE": "api_json_mode",
         "REQUEST_TIMEOUT": "request_timeout",
         "FRAMING": "framing",
+        "SANDBOX_BACKEND": "sandbox_backend",
         "WATCHDOG_ENABLED": "watchdog_enabled",
         "HALT_ON_CRITICAL_ANOMALY": "halt_on_critical_anomaly",
         "WORLD_DIR": "world_dir",
