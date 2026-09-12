@@ -17,6 +17,19 @@ class Condition(str, Enum):
     MEM_RESET = "MEM_RESET"
 
 
+class Backend(str, Enum):
+    """Which inference backend to construct.
+
+    OPENAI covers any OpenAI-compatible /v1 endpoint — OpenAI itself, Ollama's
+    /v1 shim, LM Studio, llama.cpp, vLLM, Groq, OpenRouter, Together.
+    MOCK runs the full cycle loop with no model, for loop validation.
+    """
+
+    OLLAMA = "ollama"
+    OPENAI = "openai"
+    MOCK = "mock"
+
+
 class RunConfig(BaseModel):
     """Complete configuration for a single experimental run."""
 
@@ -44,8 +57,28 @@ class RunConfig(BaseModel):
     )
 
     # Inference
+    inference_backend: Backend = Field(
+        default=Backend.OLLAMA,
+        description="Which InferenceBackend to use: ollama | openai | mock",
+    )
     ollama_host: str = Field(default="http://192.168.1.100:11434")
     model_name: str = Field(default="qwen2.5:32b-instruct-q4_K_M")
+    api_base_url: str = Field(
+        default="http://localhost:11434/v1",
+        description="OpenAI-compatible endpoint root, including /v1. Used when "
+        "inference_backend is 'openai'.",
+    )
+    api_key: Optional[str] = Field(
+        default=None,
+        description="Bearer token for the OpenAI-compatible endpoint. Omitted "
+        "from requests when unset, which is what local servers expect.",
+    )
+    api_json_mode: bool = Field(
+        default=False,
+        description="Send response_format={'type':'json_object'}. Improves "
+        "structured-output reliability where the endpoint supports it.",
+    )
+    request_timeout: float = Field(default=600.0, description="Per-request timeout, seconds")
     temperature_discussion: float = Field(default=0.7)
     temperature_structured: float = Field(default=0.3)
     max_retries: int = Field(default=2, description="Max retries on schema validation failure")
@@ -106,9 +139,20 @@ def load_config(
 
     # Start with env vars
     env_values: dict[str, object] = {}
+    # Several fields accept more than one env var name so that standard
+    # OPENAI_* variables work unchanged. Where a field has aliases, the one
+    # listed LAST wins if both are set (dicts iterate in insertion order).
     env_map = {
+        "INFERENCE_BACKEND": "inference_backend",
         "OLLAMA_HOST": "ollama_host",
         "OLLAMA_MODEL": "model_name",
+        "MODEL_NAME": "model_name",
+        "API_BASE_URL": "api_base_url",
+        "API_KEY": "api_key",
+        "OPENAI_API_KEY": "api_key",
+        "OPENAI_BASE_URL": "api_base_url",
+        "API_JSON_MODE": "api_json_mode",
+        "REQUEST_TIMEOUT": "request_timeout",
         "WORLD_DIR": "world_dir",
         "WORLD_TEMPLATE_DIR": "world_template_dir",
         "RESEARCH_LOGS_DIR": "research_logs_dir",

@@ -15,6 +15,7 @@ from rich.console import Console
 from rich.logging import RichHandler
 
 from controller.config import load_config
+from controller.inference.factory import create_backend, describe_backend
 
 console = Console()
 
@@ -42,6 +43,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Experimental condition",
     )
     parser.add_argument("--cycles", type=int, default=100, help="Number of cycles to run")
+    parser.add_argument(
+        "--backend",
+        choices=["ollama", "openai", "mock"],
+        default=None,
+        help="Inference backend (overrides INFERENCE_BACKEND in .env)",
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Model name (overrides MODEL_NAME/OLLAMA_MODEL in .env)",
+    )
+    parser.add_argument(
+        "--api-base-url",
+        type=str,
+        default=None,
+        help="OpenAI-compatible endpoint root incl. /v1 (overrides API_BASE_URL)",
+    )
     parser.add_argument("--config", type=str, default=None, help="Optional YAML config file")
     parser.add_argument(
         "--pause-after-cycle",
@@ -69,22 +88,20 @@ async def run(argv: list[str] | None = None) -> None:
         cycles=args.cycles,
         config_file=args.config,
         pause_after_cycle=args.pause_after_cycle,
+        inference_backend=args.backend,
+        model_name=args.model,
+        api_base_url=args.api_base_url,
     )
 
     console.print(f"[bold green]GENESIS[/] — Run [bold]{config.run_id}[/]")
     console.print(f"  Condition: {config.condition.value}")
     console.print(f"  Cycles:    {config.total_cycles}")
     console.print(f"  Model:     {config.model_name}")
-    console.print(f"  Ollama:    {config.ollama_host}")
+    console.print(f"  Inference: {describe_backend(config)}")
     console.print()
 
     # Initialize inference backend
-    from controller.inference.ollama_backend import OllamaBackend
-
-    backend = OllamaBackend(
-        host=config.ollama_host,
-        model=config.model_name,
-    )
+    backend = create_backend(config)
 
     # Initialize world state
     from controller.world.reset import initialize_world, load_checkpoint
