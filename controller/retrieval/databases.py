@@ -10,8 +10,14 @@ from controller.retrieval.index import RetrievalIndex
 
 logger = logging.getLogger(__name__)
 
-# Knowledge base names matching the plan
-KB_NAMES = ["general", "technical", "governance", "scenarios", "self_history"]
+# Retrievable knowledge bases.
+#
+# "scenarios" is deliberately NOT here. PLAN.md section 9 specifies the scenario
+# library as "not a retrieval-style database" — it is the injection library. If
+# it were indexed, query() with no kb_name would search it, letting agents
+# retrieve pressure events before they are injected (reading cycle 80's doctrine
+# crisis at cycle 12) and silently destroying the escalation design.
+KB_NAMES = ["general", "technical", "governance", "self_history"]
 
 
 class KnowledgeBaseManager:
@@ -71,18 +77,47 @@ class KnowledgeBaseManager:
         return all_results[:self.rerank_top_k]
 
     def add_to_self_history(self, doc_id: str, text: str, metadata: dict | None = None) -> None:
-        """Add a document to the self-history knowledge base.
+        """Index one artifact of the agents' own past.
 
-        Called during runs to index memory summaries, doctrine snapshots, etc.
+        Called each cycle with memory summaries, doctrine snapshots and protocol
+        versions, so agents can cite their own history.
         """
-        doc = {
+        if not text or not text.strip():
+            return
+        index = self.indices.get("self_history")
+        if index is None:
+            return
+        if any(d.get("doc_id") == doc_id for d in index._documents):
+            return  # already indexed; resume must not duplicate
+        index._documents.append({
             "doc_id": doc_id,
             "text": text,
             "metadata": metadata or {},
-        }
+        })
+        index._doc_texts.append(text)
+        index.build_index()
+
+    def clear_self_history(self) -> int:
+        """Wipe self-history. Returns how many documents were removed.
+
+        Called on memory reset in the MEM_RESET condition. PLAN.md section 11
+        tests "whether persistent memory is necessary for identity continuity",
+        so a reset that wiped the memory journal while leaving the full past
+        retrievable would not remove memory — it would only change its access
+        modality, confounding the comparison against BASELINE.
+        """
         index = self.indices.get("self_history")
-        if index is not None:
-            index._documents.append(doc)
-            index._doc_texts.append(text)
-            # Rebuild index to include new document
-            index.build_index()
+        if index is None:
+            return 0
+        removed = len(index._documents)
+        index._documents.clear()
+        index._doc_texts.clear()
+        index.build_index()
+        if removed:
+            logger.info("Cleared %d self-history documents on memory reset", removed)
+        return removed
+
+    @property
+    def self_history_count(self) -> int:
+        index = self.indices.get("self_history")
+        return len(index._documents) if index is not None else 0

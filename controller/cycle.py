@@ -134,6 +134,16 @@ class CycleOrchestrator:
                 self.world.reset_memory(
                     agent_id, cycle_id, self.config.memory_reset_bootstrap
                 )
+            # Self-history must go too. Wiping the memory journal while leaving
+            # the full past retrievable would not remove memory, only change how
+            # it is reached — which would confound the contrast against BASELINE
+            # that PLAN.md section 11 exists to measure.
+            removed = self.kb_manager.clear_self_history() if self.kb_manager else 0
+            self._log_event(EventType.NOTABLE_EVENT, cycle_id, payload={
+                "kind": "memory_reset",
+                "agents": ["axiom", "flux"],
+                "self_history_documents_cleared": removed,
+            })
 
         # Phase 1: Load state
         await self._run_phase("load_state", cycle_id, cycle,
