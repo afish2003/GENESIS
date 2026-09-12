@@ -1,6 +1,6 @@
 # GENESIS — Orientation
 
-**Last verified**: 2026-09-12
+**Last verified**: 2026-09-12 (second pass — first real inference run)
 **Purpose of this document**: a single anchor for returning to the project after time away. States what GENESIS is, what is actually built, what is assumed but unverified, and the shortest path to a first run.
 
 Supersedes the status portions of `build_status.md` and `handoff_2026-04-05.md`, both of which date from the April build and are partly stale.
@@ -30,14 +30,23 @@ Verified on 2026-09-12 by running the code, not by reading the April docs.
 | | |
 |---|---|
 | Controller | ~3,400 lines, 40 modules, all import cleanly |
-| Tests | 49/49 pass (`test_retrieval.py` excluded — needs `sentence-transformers`) |
+| Tests | 77/77 pass (`test_retrieval.py` excluded — needs `sentence-transformers`) |
 | Phases | all 14 implemented |
 | Prompts | all 6 written |
 | World template | complete |
-| Git | `main` at `65564bb`, synced with origin, clean tree |
+| Git | `main` synced with origin, clean tree |
 | venv | `.venv`, Python 3.11.15, all deps except `sentence-transformers` |
 
-**Cycles ever run: zero.** The system has never contacted a model. This is the single most important fact about the project's state — it is not messy, it is *untested*.
+**The loop has now run, on a real model.** `qwen2.5:7b-instruct` via local Ollama, 2 cycles, BASELINE:
+
+- 26/26 phases completed, zero crashes, 135 events
+- **zero schema validation failures** with `API_JSON_MODE=true`
+- doctrine revisions proposed, voted, approved and **actually applied** (`constitution.md`, both agents, cycle 0)
+- 163 s per cycle on an M2 Pro
+
+At 163 s/cycle a 100-cycle run is ~4.5 h *on this Mac*; the Omen's 5090 will differ and should be re-measured before scheduling the main study.
+
+The zero-retry result is the important one: it says structured output is reliable enough for long runs, at least for the qwen2.5 family with JSON mode on. Re-check on the 32b, since `max_retries` is only 2.
 
 ### Stale claims in the older docs
 
@@ -65,6 +74,13 @@ Cycle count, model name, Ollama host, both temperatures, retry limit, discussion
 | Exactly 2 conditions | `Condition` enum, `config.py:15` | Low |
 | One model for all six roles | single `model_name` field | Low |
 
+**No longer hardcoded**: the inference endpoint. `INFERENCE_BACKEND=ollama|openai|mock`
+selects at runtime, and `openai` covers any OpenAI-compatible `/v1` server —
+OpenAI, Ollama's `/v1` shim, LM Studio, llama.cpp, vLLM, Groq, OpenRouter,
+Together — by changing only `API_BASE_URL` and `MODEL_NAME`. `mock` runs the
+whole loop with no model at all, which is the fastest way to check a change
+did not break the cycle.
+
 **Read this correctly**: the rigidity is *shallow*. It is string literals and a fixed call sequence, not architectural commitment. The hard parts — the inference abstraction, per-phase Pydantic schemas, append-only logging, world-state diffing, checkpoint/resume — are all built and generic. Turning this into a platform is a refactor, not a rewrite.
 
 **Recommended order**: run the experiment that is built *first*. It will teach you which axes actually need to flex. Generalizing before a single cycle has run means guessing.
@@ -73,15 +89,28 @@ Cycle count, model name, Ollama host, both temperatures, retry limit, discussion
 
 ## 4. Shortest path to a first run
 
+A working local `.env` already exists (gitignored), pointing at Ollama on this
+Mac with `qwen2.5:7b-instruct`. To run right now:
+
 ```bash
 cd ~/Github/GENESIS
 source .venv/bin/activate
+ollama serve &                     # if not already running
 
-cp .env.example .env
-# edit .env: set OLLAMA_HOST to the HP Omen's real LAN IP
+python scripts/init_run.py --run-id SMOKE_001 --condition BASELINE --cycles 3
+python -m controller.main --run-id SMOKE_001 --condition BASELINE --cycles 3
 ```
 
-Confirm the Omen answers:
+Run the loop with no model at all — seconds, not minutes:
+
+```bash
+python -m controller.main --run-id LOOPCHECK --condition BASELINE --cycles 3 --backend mock
+```
+
+For the real study, edit `.env`: set `INFERENCE_BACKEND=ollama`, point
+`OLLAMA_HOST` at the Omen's LAN IP, and set `MODEL_NAME` to the 32b checkpoint.
+
+Confirm a remote endpoint answers before committing to a long run:
 
 ```bash
 python -c "
@@ -94,16 +123,9 @@ asyncio.run(t())
 "
 ```
 
-Then a 3-cycle smoke test:
-
-```bash
-python scripts/init_run.py --run-id SMOKE_001 --condition BASELINE --cycles 3
-python -m controller.main --run-id SMOKE_001 --condition BASELINE --cycles 3
-```
-
 **What to check afterwards, in order:**
 
-1. Did all 14 phases run for all 3 cycles without a retry storm? (`max_retries` is 2 — watch schema validation failures; this is where an unreliable model shows up first.)
+1. Did all 14 phases run for all cycles without a retry storm? (`max_retries` is 2 — watch schema validation failures; this is where an unreliable model shows up first. The 7b baseline is zero failures, so anything above that is a regression.)
 2. Are all 8 JSONL log files non-empty and well-formed?
 3. Did doctrine and identity files actually change on disk, and were diffs recorded?
 4. Cycle wall-clock time. ~14 sequential inference calls per cycle. If a cycle takes 10 minutes, a 100-cycle run is ~17 hours, and the main study is 20 of those.
@@ -117,9 +139,10 @@ python -m controller.main --run-id SMOKE_001 --condition BASELINE --cycles 3
 - `knowledge_bases/` is empty. `build_kb.py` is written and ready but has no corpus to ingest. Retrieval will return nothing until this is done. Content curation, not code.
 - 8 of ~30 scenario events written. The 8 cover the four main-study injection cycles, so a pilot is unaffected.
 
-**Needs investigation:**
+**Resolved since the April build:**
 
-- A full `WorldState` load/save round-trip over `world_template/` emits **1 diff event**, despite touching doctrine, both identities, memory, protocols, and two logs. Memory writes may not be producing diffs at all. Since these JSONL diffs are the experiment's primary output, verify before any real run.
+- *Doctrine revisions were silently discarded* when `target_document` did not exactly match a filename — approved, logged, then dropped with no warning. Fixed in `704e059`: tolerant resolution plus `applied`/`resolved_document` on every `DOCTRINE_APPROVED`, and a `NOTABLE_EVENT` on any discard.
+- *The "only 1 diff event" worry was a false alarm.* Memory is logged as `MEMORY_SUMMARY` routed to `memory_diffs.jsonl`, not as `ARTIFACT_DIFF`. Nothing is lost.
 
 **Known fragilities** (from the April audit, still true):
 
