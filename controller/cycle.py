@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -35,6 +36,7 @@ from controller.phases import (
 )
 from controller.retrieval.databases import KnowledgeBaseManager
 from controller.world.artifacts import ScenarioEvent
+from controller.monitor.watchdog import Watchdog
 from controller.world.reset import write_checkpoint
 from controller.world.state import WorldState
 
@@ -74,6 +76,12 @@ class CycleOrchestrator:
         self.logger = log
         self.scenario_library = scenario_library or {}
         self.kb_manager = kb_manager
+        # Deterministic monitoring. Observes controller-side state only and
+        # never contributes to AgentContext, so the agents cannot perceive it.
+        self.watchdog = Watchdog(config) if config.watchdog_enabled else None
+        # Everything logged during the current cycle, so the watchdog can
+        # observe the cycle exactly as the logs record it.
+        self._cycle_events: list[EventEnvelope] = []
 
     async def run_all_cycles(self, start_cycle: int = 0) -> None:
         """Execute all cycles from start_cycle to total_cycles."""
@@ -108,6 +116,8 @@ class CycleOrchestrator:
 
     async def run_cycle(self, cycle_id: int) -> None:
         """Execute a single cycle (all 14 phases)."""
+        cycle_started = time.monotonic()
+        self._cycle_events = []
         logger.info("=== Cycle %d ===", cycle_id)
         self._log_event(EventType.CYCLE_START, cycle_id)
 
@@ -187,6 +197,24 @@ class CycleOrchestrator:
 
         self._log_event(EventType.CYCLE_END, cycle_id)
 
+        # Watchdog runs last, after state is persisted, so it observes the
+        # cycle exactly as the logs record it.
+        if self.watchdog is not None:
+            elapsed = time.monotonic() - cycle_started
+            anomalies = self.watchdog.observe(
+                cycle_id=cycle_id,
+                events=self._cycle_events,
+                world=self.world,
+                cycle_seconds=elapsed,
+            )
+            if anomalies:
+                self.logger.log_events(anomalies)
+            if self.config.halt_on_critical_anomaly and Watchdog.has_critical(anomalies):
+                raise RuntimeError(
+                    f"Cycle {cycle_id}: watchdog reported a CRITICAL anomaly and "
+                    f"halt_on_critical_anomaly is set. See anomalies.jsonl."
+                )
+
     async def _run_phase(
         self,
         phase_name: str,
@@ -219,6 +247,7 @@ class CycleOrchestrator:
 
             if events:
                 self.logger.log_events(events)
+                self._cycle_events.extend(events)
 
         except Exception as e:
             logger.error("Phase %s failed at cycle %d: %s", phase_name, cycle_id, e, exc_info=True)
@@ -239,7 +268,7 @@ class CycleOrchestrator:
         for agent_id in ["axiom", "flux"]:
             contexts[agent_id] = build_agent_context(
                 agent_id=agent_id,
-                prompts_dir=self.config.prompts_dir,
+                prompts_dir=self.config.effective_prompts_dir,
                 identity=self.world.identities[agent_id],
                 memory=self.world.memory[agent_id],
                 doctrine_texts=doctrine_texts,
@@ -254,11 +283,13 @@ class CycleOrchestrator:
         payload: Optional[dict] = None,
     ) -> None:
         """Helper to log a single event."""
-        self.logger.log_event(EventEnvelope(
+        event = EventEnvelope(
             event_type=event_type,
             run_id=self.config.run_id,
             condition=self.config.condition.value,
             cycle_id=cycle_id,
             agent_id=agent_id,
             payload=payload or {},
-        ))
+        )
+        self.logger.log_event(event)
+        self._cycle_events.append(event)

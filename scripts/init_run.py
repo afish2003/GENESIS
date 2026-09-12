@@ -66,7 +66,7 @@ def main() -> None:
     print(f"Wrote config.json")
 
     # Copy prompts for version-locking
-    log.copy_prompts(config.prompts_dir)
+    log.copy_prompts(config.effective_prompts_dir)
     print(f"Copied prompts for version-locking")
 
     print(f"\nRun {config.run_id} initialized. Ready to execute:")

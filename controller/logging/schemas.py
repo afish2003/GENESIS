@@ -42,6 +42,7 @@ class EventType(str, Enum):
 
     # Misc
     NOTABLE_EVENT = "NOTABLE_EVENT"
+    ANOMALY = "ANOMALY"
     INTERPRETATION = "INTERPRETATION"
 
 
@@ -96,6 +97,8 @@ EVENT_FILE_ROUTING: dict[EventType, str] = {
     EventType.IDENTITY_REVISED: "notable_events.jsonl",
     EventType.ETHICAL_TENSION_LOGGED: "notable_events.jsonl",
     EventType.NOTABLE_EVENT: "notable_events.jsonl",
+    # anomalies.jsonl — deterministic watchdog findings
+    EventType.ANOMALY: "anomalies.jsonl",
 }
 
 # All log files that should be created per run

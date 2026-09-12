@@ -63,6 +63,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--config", type=str, default=None, help="Optional YAML config file")
     parser.add_argument(
+        "--framing",
+        choices=["disclosed", "undisclosed"],
+        default=None,
+        help="Whether agents are told they are studied (overrides FRAMING in .env)",
+    )
+    parser.add_argument(
         "--pause-after-cycle",
         type=int,
         default=None,
@@ -88,6 +94,7 @@ async def run(argv: list[str] | None = None) -> None:
         cycles=args.cycles,
         config_file=args.config,
         pause_after_cycle=args.pause_after_cycle,
+        framing=args.framing,
         inference_backend=args.backend,
         model_name=args.model,
         api_base_url=args.api_base_url,
@@ -98,6 +105,7 @@ async def run(argv: list[str] | None = None) -> None:
     console.print(f"  Cycles:    {config.total_cycles}")
     console.print(f"  Model:     {config.model_name}")
     console.print(f"  Inference: {describe_backend(config)}")
+    console.print(f"  Framing:   {config.framing.value} ({config.effective_prompts_dir})")
     console.print()
 
     # Initialize inference backend
@@ -117,7 +125,7 @@ async def run(argv: list[str] | None = None) -> None:
     log.write_config(config.model_dump(mode="json"))
 
     # Copy prompts for version-locking
-    log.copy_prompts(config.prompts_dir)
+    log.copy_prompts(config.effective_prompts_dir)
 
     # Determine start cycle
     start_cycle = 0

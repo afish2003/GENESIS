@@ -17,6 +17,28 @@ class Condition(str, Enum):
     MEM_RESET = "MEM_RESET"
 
 
+class Framing(str, Enum):
+    """Whether the agents are told they are experimental subjects.
+
+    DISCLOSED   prompts/              — the v1 design. Both agent prompts open
+                                        with "a contained, persistent research
+                                        environment" and "you are participating
+                                        in a structured research experiment".
+    UNDISCLOSED prompts_undisclosed/  — identical in role, partnership and
+                                        behavioural guidance; the experiment
+                                        framing is removed, including from every
+                                        auxiliary prompt whose output re-enters
+                                        agent context.
+
+    Evaluation awareness measurably changes model behaviour, so this is a
+    confound in the disclosed condition and an experimental variable when the
+    two are run against each other.
+    """
+
+    DISCLOSED = "disclosed"
+    UNDISCLOSED = "undisclosed"
+
+
 class Backend(str, Enum):
     """Which inference backend to construct.
 
@@ -100,12 +122,41 @@ class RunConfig(BaseModel):
     # Scenario injection schedule (cycle numbers)
     scenario_injection_cycles: list[int] = Field(default_factory=list)
 
+    # Framing condition — selects which prompt set the agents receive
+    framing: Framing = Field(
+        default=Framing.DISCLOSED,
+        description="disclosed | undisclosed — whether agents are told they are studied",
+    )
+
+    # Monitoring — deterministic, no inference, invisible to the agents
+    watchdog_enabled: bool = Field(
+        default=True,
+        description="Run deterministic anomaly rules after each cycle",
+    )
+    halt_on_critical_anomaly: bool = Field(
+        default=False,
+        description="Abort the run when the watchdog reports a CRITICAL anomaly",
+    )
+
     # Paths
     world_dir: Path = Field(default=Path("./world"))
     world_template_dir: Path = Field(default=Path("./world_template"))
     research_logs_dir: Path = Field(default=Path("./research_logs"))
     prompts_dir: Path = Field(default=Path("./prompts"))
     knowledge_bases_dir: Path = Field(default=Path("./knowledge_bases"))
+
+    @property
+    def effective_prompts_dir(self) -> Path:
+        """Prompt directory for this run, honouring the framing condition.
+
+        An explicit prompts_dir (env, YAML or CLI) always wins, so a custom
+        prompt set can still be pointed at directly.
+        """
+        if self.prompts_dir != Path("./prompts"):
+            return self.prompts_dir
+        if self.framing is Framing.UNDISCLOSED:
+            return Path("./prompts_undisclosed")
+        return self.prompts_dir
 
     @property
     def run_log_dir(self) -> Path:
@@ -153,6 +204,9 @@ def load_config(
         "OPENAI_BASE_URL": "api_base_url",
         "API_JSON_MODE": "api_json_mode",
         "REQUEST_TIMEOUT": "request_timeout",
+        "FRAMING": "framing",
+        "WATCHDOG_ENABLED": "watchdog_enabled",
+        "HALT_ON_CRITICAL_ANOMALY": "halt_on_critical_anomaly",
         "WORLD_DIR": "world_dir",
         "WORLD_TEMPLATE_DIR": "world_template_dir",
         "RESEARCH_LOGS_DIR": "research_logs_dir",
