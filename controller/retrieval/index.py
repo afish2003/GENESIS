@@ -85,7 +85,7 @@ class RetrievalIndex:
         except ImportError:
             logger.error("rank-bm25 not installed. Retrieval will not work.")
 
-    def load_embedder(self, model_name: str = "sentence-transformers/bge-small-en-v1.5") -> None:
+    def load_embedder(self, model_name: str = "BAAI/bge-small-en-v1.5") -> None:
         """Load the sentence transformer for reranking."""
         try:
             from sentence_transformers import SentenceTransformer

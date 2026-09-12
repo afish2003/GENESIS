@@ -32,3 +32,6 @@ knowledge_bases/self_history/
 *.bin
 *.onnx
 *.safetensors
+
+# Raw corpus source files (regenerate with scripts/fetch_corpus.py)
+raw_corpus/

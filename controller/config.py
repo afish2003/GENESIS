@@ -123,7 +123,7 @@ class RunConfig(BaseModel):
     discussion_turns_scenario: int = Field(default=8, description="Turns per agent when scenario active")
 
     # Retrieval
-    embedding_model: str = Field(default="sentence-transformers/bge-small-en-v1.5")
+    embedding_model: str = Field(default="BAAI/bge-small-en-v1.5")
     bm25_candidate_pool: int = Field(default=20)
     rerank_top_k: int = Field(default=5)
     max_retrieval_queries: int = Field(default=3, description="Max queries per agent per cycle")

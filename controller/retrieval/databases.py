@@ -28,7 +28,7 @@ class KnowledgeBaseManager:
         kb_dir: Path,
         bm25_pool_size: int = 20,
         rerank_top_k: int = 5,
-        embedding_model: str = "sentence-transformers/bge-small-en-v1.5",
+        embedding_model: str = "BAAI/bge-small-en-v1.5",
     ) -> None:
         self.kb_dir = kb_dir
         self.bm25_pool_size = bm25_pool_size
