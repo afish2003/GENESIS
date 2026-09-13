@@ -150,6 +150,15 @@ class RunConfig(BaseModel):
     sandbox_runtime: str = Field(default="docker", description="docker | podman")
     sandbox_memory: str = Field(default="512m")
 
+    doctrine_apply_mode: str = Field(
+        default="replace",
+        pattern="^(replace|append)$",
+        description="replace: write the agent's full revised document (correct). "
+                    "append: legacy pre-2026-09-13 behaviour that appended a "
+                    "description of the change instead of applying it — retained "
+                    "only to reproduce the 2026-09-12 runs.",
+    )
+
     # Cycle structure experiments
     independent_proposals: bool = Field(
         default=False,
@@ -236,6 +245,7 @@ def load_config(
         "FRAMING": "framing",
         "SANDBOX_BACKEND": "sandbox_backend",
         "INDEPENDENT_PROPOSALS": "independent_proposals",
+        "DOCTRINE_APPLY_MODE": "doctrine_apply_mode",
         "WATCHDOG_ENABLED": "watchdog_enabled",
         "HALT_ON_CRITICAL_ANOMALY": "halt_on_critical_anomaly",
         "WORLD_DIR": "world_dir",

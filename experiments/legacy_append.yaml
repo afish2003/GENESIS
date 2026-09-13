@@ -1,0 +1,5 @@
+# Reproduces the 2026-09-12 six-run battery, which used the pre-fix
+# append-a-description behaviour. Not for new work.
+prompts_dir: ./prompts
+world_template_dir: ./world_template
+doctrine_apply_mode: append

@@ -21,20 +21,40 @@ _logger = logging.getLogger(__name__)
 
 DOCTRINE_PROPOSAL_PROMPT = """This is the doctrine revision phase. Based on this cycle's discussion, evaluation feedback, and your reflection, do you want to propose a change to any doctrine document?
 
-Available doctrine documents:
-{doctrine_list}
+Here are the current doctrine documents in full:
 
-If you have a proposal, describe the specific changes and your rationale. If no changes are needed this cycle, respond with an empty proposed_diff and a rationale explaining why the current doctrine is adequate.
+{doctrine_full}
 
-Target document options: {doc_names}"""
+If you want to propose a change, you must provide THREE things:
+
+1. `target_document` — exactly one of: {doc_names}
+2. `proposed_diff` — one or two sentences summarising what you are changing and why
+3. `revised_content` — the COMPLETE text of that document as it should read after your change
+
+`revised_content` is what will actually be written to the file. Reproduce the
+whole document, including every part you are not changing, with your revision
+incorporated in place. Do not write a description of the change, a fragment, or
+a note about what should be added — write the finished document.
+
+If no change is needed this cycle, respond with an empty proposed_diff and a
+rationale explaining why the current doctrine is adequate."""
 
 DOCTRINE_VOTE_PROMPT = """Your partner {proposer_name} has proposed a doctrine revision:
 
 **Target document**: {target_document}
-**Proposed changes**: {proposed_diff}
+**Summary of the change**: {proposed_diff}
 **Rationale**: {rationale}
 
-Do you approve or reject this proposal? Provide your vote and reason."""
+This is the full text that will replace the document if you approve:
+
+```
+{revised_content}
+```
+
+Do you approve or reject this proposal? You are voting on the text above, not
+on the summary. Reject it if it drops content that should have been kept, if it
+does not do what the summary claims, or if you disagree with the change itself.
+Provide your vote and reason."""
 
 
 def resolve_doctrine_target(target: str, doctrine: dict[str, object]) -> str | None:
@@ -83,6 +103,63 @@ def resolve_doctrine_target(target: str, doctrine: dict[str, object]) -> str | N
     return None
 
 
+# A revised document shorter than this fraction of the original is treated as a
+# truncation rather than an edit. Doctrine is the primary dependent variable;
+# losing half of it to a model that stopped generating would be silent and
+# unrecoverable.
+MIN_RETAINED_FRACTION = 0.5
+
+
+def apply_revision(
+    current: str,
+    proposal: "DoctrineRevisionProposal",
+    cycle_id: int,
+    proposer_id: str,
+    mode: str = "replace",
+) -> tuple[str | None, str, str]:
+    """Produce the new document text for an approved revision.
+
+    Returns (new_text, how, why). new_text is None when the revision must be
+    refused, with `why` explaining it.
+
+    mode="replace"  write the agent's full revised_content, after sanity checks.
+    mode="append"   the pre-2026-09-13 behaviour: append a description of the
+                    change as a note. Retained only so the six runs of
+                    2026-09-12 remain reproducible. It does not change the
+                    document and should not be used for new work.
+    """
+    if mode == "append":
+        note = (
+            f"\n\n---\n*Revision (cycle {cycle_id}, proposed by {proposer_id})*: "
+            f"{proposal.proposed_diff}"
+        )
+        return current + note, "append(legacy)", ""
+
+    revised = (proposal.revised_content or "").strip()
+
+    if not revised:
+        return None, "", "agent supplied no revised_content"
+
+    if revised == current.strip():
+        return None, "", "revised_content is identical to the current document"
+
+    # Guard against the model emitting a description instead of a document, or
+    # stopping early. Both are silent failures that would destroy doctrine.
+    if len(revised) < len(current) * MIN_RETAINED_FRACTION:
+        return None, "", (
+            f"revised_content is {len(revised)} chars against {len(current)} "
+            f"current — below the {MIN_RETAINED_FRACTION:.0%} retention floor, "
+            f"treating as truncation"
+        )
+
+    # Models routinely drop the trailing newline, which shows up as a spurious
+    # "\ No newline at end of file" in every subsequent diff.
+    if not revised.endswith("\n"):
+        revised += "\n"
+
+    return revised, "replace", ""
+
+
 async def execute(
     config: RunConfig,
     backend: InferenceBackend,
@@ -95,8 +172,11 @@ async def execute(
     events = []
 
     doc_names = ", ".join(sorted(world.doctrine.keys()))
-    doctrine_list = "\n".join(
-        f"- {name}: {doc.content[:100]}..." for name, doc in sorted(world.doctrine.items())
+    # The full text, not a 100-character preview. An agent cannot rewrite a
+    # document it has only seen the opening line of.
+    doctrine_full = "\n\n".join(
+        f"### {name}\n```\n{doc.content}\n```"
+        for name, doc in sorted(world.doctrine.items())
     )
 
     # Each agent can propose (Axiom first)
@@ -117,7 +197,7 @@ async def execute(
         messages.append(Message(
             role="user",
             content=DOCTRINE_PROPOSAL_PROMPT.format(
-                doctrine_list=doctrine_list,
+                doctrine_full=doctrine_full,
                 doc_names=doc_names,
             ),
         ))
@@ -158,6 +238,7 @@ async def execute(
                 target_document=proposal.target_document,
                 proposed_diff=proposal.proposed_diff,
                 rationale=proposal.rationale,
+                revised_content=(proposal.revised_content or "(none supplied)")[:4000],
             ),
         ))
 
@@ -221,13 +302,37 @@ async def execute(
                         cycle.cycle_id, requested, resolved,
                     )
                 doc = world.doctrine[resolved]
-                # The proposed_diff is a description; in a more sophisticated
-                # version we'd apply an actual diff. For v1, we append the
-                # proposed changes as a revision note and let the model
-                # produce the full updated content in future cycles.
-                doc.content += f"\n\n---\n*Revision (cycle {cycle.cycle_id}, proposed by {proposer_id})*: {proposal.proposed_diff}"
-                doc.last_modified_cycle = cycle.cycle_id
-                doc.version += 1
+                applied_text, how, why = apply_revision(
+                    doc.content, proposal, cycle.cycle_id, proposer_id,
+                    mode=config.doctrine_apply_mode,
+                )
+                if applied_text is None:
+                    _logger.warning(
+                        "Cycle %d: revision to %s not applied — %s",
+                        cycle.cycle_id, resolved, why,
+                    )
+                    events.append(EventEnvelope(
+                        event_type=EventType.NOTABLE_EVENT,
+                        run_id=config.run_id,
+                        condition=config.condition.value,
+                        cycle_id=cycle.cycle_id,
+                        agent_id=proposer_id,
+                        payload={
+                            "kind": "doctrine_revision_rejected_by_controller",
+                            "document": resolved,
+                            "reason": why,
+                            "detail": "Approved revision could not be applied safely.",
+                        },
+                    ))
+                else:
+                    doc.content = applied_text
+                    doc.last_modified_cycle = cycle.cycle_id
+                    doc.version += 1
+                    _logger.info(
+                        "Cycle %d: %s v%d updated via %s (%d -> %d chars)",
+                        cycle.cycle_id, resolved, doc.version, how,
+                        len(proposal.revised_content or ""), len(applied_text),
+                    )
         else:
             events.append(EventEnvelope(
                 event_type=EventType.DOCTRINE_REJECTED,

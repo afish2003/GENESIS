@@ -135,11 +135,23 @@ class InterpretationOutput(BaseModel):
 # ---------------------------------------------------------------------------
 
 class DoctrineRevisionProposal(BaseModel):
-    """A proposed change to shared doctrine."""
+    """A proposed change to shared doctrine.
+
+    `revised_content` carries the actual change. `proposed_diff` is a
+    human-readable summary for the partner's vote and for the logs — it is
+    NOT what gets written to disk. Conflating the two is what caused doctrine
+    to accumulate descriptions of edits instead of the edits themselves.
+    """
 
     proposing_agent: str = Field(default="", description="Set by controller after parsing")
     target_document: str = Field(..., description="Which doctrine document to modify")
-    proposed_diff: str = Field(..., description="Description of proposed changes")
+    proposed_diff: str = Field(..., description="Short summary of what is being changed and why")
+    revised_content: str = Field(
+        default="",
+        description="The COMPLETE revised document, in full, with the change applied. "
+                    "Not a fragment and not a description — the entire file as it "
+                    "should read afterwards.",
+    )
     rationale: str
 
 
