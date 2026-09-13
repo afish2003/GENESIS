@@ -1,0 +1,5 @@
+# Arm B — minimal identity seed
+# Name, partner, task, and one temperamental nudge. No role assignment,
+# no stated weakness, near-blank identity statement.
+prompts_dir: ./prompts_minimal
+world_template_dir: ./world_template_minimal

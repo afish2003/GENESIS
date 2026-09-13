@@ -1,0 +1,3 @@
+# Arm A — prescribed identity (the PLAN.md section 6 design)
+prompts_dir: ./prompts
+world_template_dir: ./world_template

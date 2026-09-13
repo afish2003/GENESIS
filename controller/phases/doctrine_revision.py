@@ -105,8 +105,15 @@ async def execute(
         messages = [
             proposer_ctx.build_system_message(),
         ]
-        for msg in proposer_ctx.get_discussion_messages():
-            messages.append(msg)
+        # By default each proposer sees the full shared discussion before
+        # drafting. That is a consensus-manufacturing step: both agents reason
+        # from the same 8-16 turns and then propose near-identical revisions,
+        # which the other ratifies. With independent_proposals set, the agent
+        # drafts from its own identity, doctrine and memory alone, so any
+        # agreement that follows is convergence rather than duplication.
+        if not config.independent_proposals:
+            for msg in proposer_ctx.get_discussion_messages():
+                messages.append(msg)
         messages.append(Message(
             role="user",
             content=DOCTRINE_PROPOSAL_PROMPT.format(

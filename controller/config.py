@@ -150,6 +150,13 @@ class RunConfig(BaseModel):
     sandbox_runtime: str = Field(default="docker", description="docker | podman")
     sandbox_memory: str = Field(default="512m")
 
+    # Cycle structure experiments
+    independent_proposals: bool = Field(
+        default=False,
+        description="Draft doctrine proposals without the shared discussion "
+                    "history, isolating whether phase order manufactures consensus",
+    )
+
     # Monitoring — deterministic, no inference, invisible to the agents
     watchdog_enabled: bool = Field(
         default=True,
@@ -228,6 +235,7 @@ def load_config(
         "REQUEST_TIMEOUT": "request_timeout",
         "FRAMING": "framing",
         "SANDBOX_BACKEND": "sandbox_backend",
+        "INDEPENDENT_PROPOSALS": "independent_proposals",
         "WATCHDOG_ENABLED": "watchdog_enabled",
         "HALT_ON_CRITICAL_ANOMALY": "halt_on_critical_anomaly",
         "WORLD_DIR": "world_dir",
