@@ -35,6 +35,31 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_IMAGE = "python:3.11-slim"
 
+#: Fraction of the runtime's total memory a single container may be allowed to
+#: claim. The sandbox runs one container at a time, but the runtime's memory is
+#: shared with everything else it hosts, and a --memory at or above the total is
+#: not a limit at all — the cgroup can never be the thing that stops a runaway.
+_MAX_MEMORY_FRACTION = 0.75
+
+
+def parse_memory(value: str) -> int:
+    """Docker's memory syntax ('512m', '1g', '1.5g', '2048') to bytes.
+
+    Returns 0 for anything unparseable rather than raising: this feeds an
+    advisory capacity check, and a config the sandbox cannot interpret is
+    Docker's problem to reject, with a better message than ours.
+    """
+    text = str(value).strip().lower()
+    units = {"b": 1, "k": 1024, "m": 1024 ** 2, "g": 1024 ** 3, "t": 1024 ** 4}
+    multiplier = 1
+    if text and text[-1] in units:
+        multiplier = units[text[-1]]
+        text = text[:-1]
+    try:
+        return int(float(text) * multiplier)
+    except ValueError:
+        return 0
+
 # OCI exit codes
 _EXIT_TIMEOUT_KILL = 137  # SIGKILL — also what the OOM killer produces
 
@@ -46,14 +71,24 @@ class DockerSandbox(ExecutionSandbox):
         self,
         image: str = DEFAULT_IMAGE,
         runtime: str = "docker",          # or "podman", or "docker --runtime runsc"
-        memory: str = "512m",
+        memory: str = "2g",
         cpus: str = "1.0",
         pids_limit: int = 128,
         workspace_root: Path | None = None,
+        tmpfs: str | None = None,
     ) -> None:
         self.image = image
         self.runtime = runtime
         self.memory = memory
+        # /tmp is the container's only writable filesystem, and tmpfs pages are
+        # charged to its memory cgroup — measured, not assumed: with
+        # --memory 512m and --tmpfs size=1g, writing 900 MiB to /tmp is
+        # OOM-killed at 137. So `size=` is not what contains a runaway write;
+        # --memory is. Defaulting it below --memory would therefore be a second,
+        # smaller, arbitrary limit that buys no containment and only takes
+        # scratch space away from the agents. It tracks --memory instead, and
+        # `sandbox_memory` is the one number to turn.
+        self.tmpfs = tmpfs or memory
         self.cpus = cpus
         self.pids_limit = pids_limit
         self.workspace_root = workspace_root
@@ -77,8 +112,9 @@ class DockerSandbox(ExecutionSandbox):
             "--rm",                         # ephemeral: no cross-execution persistence
             "--network", "none",            # no exfiltration, no fetching, no LAN, no Ollama
             "--read-only",                  # immutable rootfs
-            # The only writable filesystem, and it is RAM-backed and capped.
-            "--tmpfs", "/tmp:size=64m,nosuid",
+            # The only writable filesystem: RAM-backed, and bounded by the
+            # memory cgroup rather than by this number. See __init__.
+            "--tmpfs", f"/tmp:size={self.tmpfs},nosuid",
             "--user", "65534:65534",        # nobody
             "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges",
@@ -249,3 +285,51 @@ class DockerSandbox(ExecutionSandbox):
             return proc.returncode == 0
         except (asyncio.TimeoutError, OSError):
             return False
+
+    async def runtime_memory_bytes(self) -> int:
+        """Total memory the container runtime can hand out. 0 if unknown.
+
+        On Docker Desktop this is the Linux VM's allocation, not the host's —
+        a Mac with 16 GiB may be offering containers 8.
+        """
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *self.runtime_argv, "info", "--format", "{{.MemTotal}}",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            out, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
+            return int(out.decode().strip() or 0)
+        except (asyncio.TimeoutError, OSError, ValueError):
+            return 0
+
+    async def check_capacity(self) -> list[str]:
+        """Reasons the configured limits are not limits on this host.
+
+        /tmp is the container's only writable filesystem and it is RAM-backed,
+        so `sandbox_memory` sets both the memory cap AND the scratch ceiling.
+        That makes it tempting to raise it a long way — and a --memory larger
+        than what the runtime actually has is not a cap, it is a number. The
+        cgroup would never be the thing that stops a runaway write; the host
+        OOM killer would, after the host was already in trouble.
+
+        Advisory: returns problems rather than refusing, because the researcher
+        may know something about the host that `docker info` does not.
+        """
+        wanted = parse_memory(self.memory)
+        available = await self.runtime_memory_bytes()
+        if not wanted or not available:
+            return []
+
+        gib = 1024 ** 3
+        if wanted > available * _MAX_MEMORY_FRACTION:
+            return [
+                f"sandbox_memory is {self.memory} ({wanted / gib:.1f} GiB) but "
+                f"{self.runtime_argv[0]} has only {available / gib:.1f} GiB to "
+                f"give. A --memory at or near the runtime total does not contain "
+                f"anything: the cgroup can never fire, so a runaway container "
+                f"takes the host down instead. Lower it to at most "
+                f"{available * _MAX_MEMORY_FRACTION / gib:.1f} GiB, or give the "
+                f"runtime more memory (Docker Desktop: Settings > Resources)."
+            ]
+        return []

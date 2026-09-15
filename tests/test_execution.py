@@ -45,6 +45,9 @@ class FakeSandbox:
     async def health_check(self) -> bool:
         return True
 
+    async def check_capacity(self) -> list[str]:
+        return []
+
     async def close(self) -> None:
         return None
 

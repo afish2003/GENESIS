@@ -626,6 +626,9 @@ class TestExecutionReachesEvaluation:
             async def health_check(self):
                 return True
 
+            async def check_capacity(self):
+                return []
+
             async def close(self):
                 return None
 

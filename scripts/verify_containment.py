@@ -28,6 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from controller.config import RunConfig  # noqa: E402
 from controller.sandbox.docker import DockerSandbox  # noqa: E402
 
 SUITE = Path(__file__).parent.parent / "tests" / "test_containment_live.py"
@@ -64,10 +65,27 @@ def preflight(runtime: str, image: str) -> list[str]:
     return problems
 
 
+def report_capacity(runtime: str, memory: str) -> None:
+    """What this host can actually back, which is not always what is configured."""
+    sb = DockerSandbox(runtime=runtime, memory=memory)
+    total = asyncio.run(sb.runtime_memory_bytes())
+    gib = 1024 ** 3
+    if total:
+        print(f"Runtime memory available: {total / gib:.1f} GiB")
+    print(f"sandbox_memory: {memory} — this bounds BOTH the container's memory "
+          f"and its scratch space,\n  because /tmp is the only writable "
+          f"filesystem and it is RAM-backed.")
+    for problem in asyncio.run(sb.check_capacity()):
+        print(f"\n  WARNING: {problem}")
+    print()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--runtime", default="docker", help="docker | podman")
     ap.add_argument("--image", default="python:3.11-slim")
+    ap.add_argument("--memory", default=RunConfig.model_fields["sandbox_memory"].default,
+                    help="Check capacity for this sandbox_memory value")
     args = ap.parse_args()
 
     print(f"Verifying containment: runtime={args.runtime} image={args.image}\n")
@@ -79,6 +97,8 @@ def main() -> int:
             print(f"  - {p}")
         print("\nUNVERIFIED. Do not enable execution on this host.")
         return 2
+
+    report_capacity(args.runtime, args.memory)
 
     result = subprocess.run([
         sys.executable, "-m", "pytest", str(SUITE),

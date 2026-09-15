@@ -36,6 +36,15 @@ class ExecutionSandbox(ABC):
         """Whether this sandbox can currently run anything."""
         return True
 
+    async def check_capacity(self) -> list[str]:
+        """Reasons the configured limits would not actually limit anything.
+
+        Separate from health_check: a sandbox can be perfectly healthy and
+        configured with a memory cap larger than the machine, which is not a cap.
+        Advisory — returns problems, does not refuse.
+        """
+        return []
+
     async def close(self) -> None:
         return None
 

@@ -32,5 +32,6 @@ def create_sandbox(config) -> ExecutionSandbox:
             image=config.sandbox_image,
             runtime=config.sandbox_runtime,
             memory=config.sandbox_memory,
+            tmpfs=config.sandbox_tmpfs,
         )
     return NullSandbox()

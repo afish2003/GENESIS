@@ -24,7 +24,7 @@ import shutil
 
 import pytest
 
-from controller.sandbox.docker import DockerSandbox
+from controller.sandbox.docker import DockerSandbox, parse_memory
 from controller.sandbox.schemas import ExecutionOutcome, ExecutionRequest
 
 pytestmark = pytest.mark.live_sandbox
@@ -45,8 +45,9 @@ requires_runtime = pytest.mark.skipif(
 )
 
 
-def run(code: str, *, timeout: float = TIMEOUT, entrypoint: str = "python module.py"):
-    sb = DockerSandbox()
+def run(code: str, *, timeout: float = TIMEOUT, entrypoint: str = "python module.py",
+        **kw):
+    sb = DockerSandbox(**kw)
     return asyncio.run(sb.run(ExecutionRequest(
         files={"module.py": code}, entrypoint=entrypoint, timeout_seconds=timeout,
     )))
@@ -163,7 +164,13 @@ class TestHostFilesystem:
 @requires_runtime
 class TestResourceLimits:
     def test_disk_fill_is_capped(self):
-        """tmpfs is the only writable filesystem and it is capped at 64 MiB."""
+        """tmpfs is the only writable filesystem, and the memory cgroup bounds it.
+
+        Asserted positively. The obvious version — "ESCAPED not in stdout" —
+        passes when the container is OOM-killed and prints nothing at all, which
+        is also what a broken sandbox looks like, so it would hold whether or not
+        containment worked.
+        """
         r = run(
             "written = 0\n"
             "try:\n"
@@ -172,11 +179,35 @@ class TestResourceLimits:
             "            f.write(b'x' * 1024 * 1024)\n"
             "            f.flush()\n"
             "            written += 1\n"
-            "    print('ESCAPED: wrote', written, 'MiB')\n"
+            "    print('WROTE_ALL', written)\n"
             "except OSError as e:\n"
-            "    print('contained after', written, 'MiB:', type(e).__name__)\n"
+            "    print('CONTAINED', written, type(e).__name__)\n"
         )
-        assert "ESCAPED" not in r.stdout, r.stdout
+        assert "WROTE_ALL" not in r.stdout, f"4 GiB write succeeded: {r.stdout}"
+        # Two legitimate outcomes: a clean ENOSPC, or the OOM killer (137).
+        if "CONTAINED" in r.stdout:
+            written = int(r.stdout.split("CONTAINED")[1].split()[0])
+            assert written < 4096, written
+        else:
+            assert r.exit_code == 137 or r.outcome is ExecutionOutcome.TIMEOUT, (
+                f"neither ENOSPC nor an OOM kill: {r.outcome} "
+                f"exit={r.exit_code} stdout={r.stdout!r} stderr={r.stderr!r}"
+            )
+
+    def test_scratch_space_is_usable(self):
+        """The other half: containment that leaves no room to work is a bug too.
+
+        64 MiB was the original tmpfs size, chosen as a second limit on top of
+        --memory before it was checked that --memory already bounds tmpfs.
+        """
+        r = run(
+            "with open('/tmp/scratch', 'wb') as f:\n"
+            "    f.write(b'x' * 200 * 1024 * 1024)\n"
+            "import os\n"
+            "print('wrote', os.path.getsize('/tmp/scratch') // (1024 * 1024), 'MiB')\n"
+        )
+        assert r.outcome is ExecutionOutcome.OK, (r.outcome, r.detail, r.stderr)
+        assert "wrote 200 MiB" in r.stdout
 
     def test_fork_bomb_is_contained(self):
         """--pids-limit. The container may die; the host must not."""
@@ -250,3 +281,92 @@ class TestOutputFlooding:
         r = run("print('x' * 80)\n" * 1 + "for _ in range(200000): print('flood')")
         assert r.truncated is True
         assert len(r.stdout.encode()) < 100_000
+
+
+@requires_runtime
+class TestScratchSpaceIsBoundedByMemory:
+    """Why /tmp tracks --memory instead of carrying its own smaller number.
+
+    /tmp is the container's only writable filesystem and it is RAM-backed, so
+    `sandbox_memory` is the one knob that decides both how much memory the
+    agents' program gets and how much scratch it can write. These tests are the
+    measurements that decision rests on — without them "tmpfs is capped by the
+    memory cgroup" is an assumption, and the last assumption of that shape
+    (about the workspace mount) turned out to be wrong.
+    """
+
+    def test_tmpfs_is_charged_to_the_memory_cgroup(self):
+        """The load-bearing fact: a tmpfs larger than --memory is not usable.
+
+        If this ever stops being true, tmpfs becomes an uncapped host-RAM
+        vector and `size=` has to become a real limit again.
+        """
+        r = run(
+            "w = 0\n"
+            "with open('/tmp/f', 'wb') as f:\n"
+            "    for _ in range(900):\n"
+            "        f.write(b'x' * 1024 * 1024)\n"
+            "        f.flush()\n"
+            "        w += 1\n"
+            "print('WROTE_ALL', w)\n",
+            memory="512m", tmpfs="1g", timeout=60.0,
+        )
+        assert "WROTE_ALL" not in r.stdout, (
+            "900 MiB was written to a 1g tmpfs under a 512m memory cap: tmpfs "
+            "is NOT charged to the cgroup on this host, so /tmp needs its own "
+            "hard size limit again"
+        )
+        assert r.exit_code == 137 or r.outcome is ExecutionOutcome.TIMEOUT
+
+    def test_raising_the_memory_cap_raises_usable_scratch(self):
+        """Containment that leaves no room to work is its own kind of bug."""
+        code = (
+            "with open('/tmp/f', 'wb') as f:\n"
+            "    f.write(b'x' * 700 * 1024 * 1024)\n"
+            "import os\n"
+            "print('wrote', os.path.getsize('/tmp/f') // (1024 * 1024))\n"
+        )
+        assert run(code, memory="512m", timeout=60.0).outcome is not ExecutionOutcome.OK
+        big = run(code, memory="2g", timeout=60.0)
+        assert big.outcome is ExecutionOutcome.OK, (big.outcome, big.detail)
+        assert "wrote 700" in big.stdout
+
+    def test_storage_opt_is_not_a_usable_alternative(self):
+        """Documents why there is no disk-backed scratch option.
+
+        `--storage-opt size=` looks like the answer to "we want tens of GiB of
+        scratch without spending RAM". On the overlayfs driver Docker Desktop
+        uses, it is ACCEPTED AND SILENTLY IGNORED — measured at 1600 MiB written
+        under size=1G. Adding it would put back exactly the kind of hole the
+        workspace mount was: a flag that is present, correct, and does nothing.
+
+        If this test ever fails, the driver started enforcing it and a
+        disk-backed scratch option becomes worth designing.
+        """
+        import subprocess
+
+        out = subprocess.run(
+            ["docker", "run", "--rm", "--network", "none",
+             "--storage-opt", "size=1G", "python:3.11-slim",
+             "df", "-BM", "--output=size", "/"],
+            capture_output=True, text=True, timeout=120,
+        )
+        if out.returncode != 0:
+            pytest.skip(f"driver rejects --storage-opt outright: {out.stderr.strip()}")
+        size_mb = int(out.stdout.split()[-1].rstrip("M"))
+        assert size_mb > 2048, (
+            f"--storage-opt size=1G now reports a {size_mb} MiB filesystem, i.e. "
+            f"it is being enforced. Disk-backed scratch is now possible; revisit "
+            f"the tmpfs-only decision in docs/containment_design.md."
+        )
+
+
+class TestMemoryParsing:
+    """No container needed; here because it backs the capacity check."""
+
+    @pytest.mark.parametrize("text,expected", [
+        ("512m", 512 * 1024 ** 2), ("1g", 1024 ** 3),
+        ("1.5g", int(1.5 * 1024 ** 3)), ("2048", 2048), ("", 0), ("junk", 0),
+    ])
+    def test_parse_memory(self, text, expected):
+        assert parse_memory(text) == expected

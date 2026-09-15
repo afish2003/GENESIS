@@ -183,7 +183,20 @@ class RunConfig(BaseModel):
     )
     sandbox_image: str = Field(default="python:3.11-slim")
     sandbox_runtime: str = Field(default="docker", description="docker | podman")
-    sandbox_memory: str = Field(default="512m")
+    sandbox_memory: str = Field(
+        default="2g",
+        description="Container memory cap. Also the effective ceiling on scratch "
+                    "space: /tmp is a tmpfs and its pages are charged to the same "
+                    "cgroup, so this one number bounds both. 1g leaves roughly "
+                    "700 MiB of usable scratch; 512m leaves roughly 300 MiB.",
+    )
+    sandbox_tmpfs: Optional[str] = Field(
+        default=None,
+        description="Size of the container's /tmp. Defaults to sandbox_memory, "
+                    "which is what actually bounds it. Set it lower only to stop "
+                    "a program trading its own RAM for disk — not for host "
+                    "safety, which sandbox_memory already provides.",
+    )
     sandbox_timeout_seconds: float = Field(
         default=30.0, ge=1.0, le=300.0,
         description="Wall-clock ceiling for one execution, enforced in and out "
@@ -394,6 +407,7 @@ def load_config(
         "SANDBOX_IMAGE": "sandbox_image",
         "SANDBOX_RUNTIME": "sandbox_runtime",
         "SANDBOX_MEMORY": "sandbox_memory",
+        "SANDBOX_TMPFS": "sandbox_tmpfs",
         "SANDBOX_TIMEOUT_SECONDS": "sandbox_timeout_seconds",
         "EXECUTION_ENABLED": "execution_enabled",
         "INDEPENDENT_PROPOSALS": "independent_proposals",

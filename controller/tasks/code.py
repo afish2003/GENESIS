@@ -54,7 +54,7 @@ EXECUTED_NOTE = """Your code WILL BE RUN. It executes in an isolated container w
 
 Your source is saved as `module.py`. If you supply tests they are saved as `test_module.py` and run INSTEAD of the module, so they must `import module` (or `from module import ...`) themselves. Use plain asserts or `unittest`; nothing else is installed.
 
-The workspace is read-only. If you need scratch space, write under `/tmp` — it is small and thrown away when the run ends.
+The workspace is read-only. If you need scratch space, write under `/tmp`: it is RAM-backed, shares the container's memory budget, and is thrown away when the run ends.
 
 Make the run say something a reader can learn from — print what the code does, not that it ran. Prefer code that demonstrates itself over code that merely defines itself."""
 

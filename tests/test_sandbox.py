@@ -86,8 +86,21 @@ class TestContainmentFlags:
         assert all(m.endswith(":ro") for m in mounts)
 
     def test_the_only_writable_filesystem_is_capped(self):
+        """/tmp is bounded by the memory cgroup, so its size tracks --memory.
+
+        Measured, not assumed: --memory 512m with --tmpfs size=1g OOM-kills a
+        900 MiB write at exit 137. A tmpfs smaller than --memory would be a
+        second, redundant limit that only costs the agents scratch space.
+        """
         tmpfs = [self.args[i + 1] for i, a in enumerate(self.args) if a == "--tmpfs"]
-        assert tmpfs == ["/tmp:size=64m,nosuid"]
+        mem = self.args[self.args.index("--memory") + 1]
+        assert tmpfs == [f"/tmp:size={mem},nosuid"]
+
+    def test_tmpfs_can_be_set_below_the_memory_cap(self):
+        args = DockerSandbox(memory="1g", tmpfs="128m")._container_args(
+            Path("/tmp/ws"), timeout=30)
+        assert args[args.index("--tmpfs") + 1] == "/tmp:size=128m,nosuid"
+        assert args[args.index("--memory") + 1] == "1g"
 
     def test_timeout_is_enforced_inside_the_container(self):
         assert "timeout" in self.args

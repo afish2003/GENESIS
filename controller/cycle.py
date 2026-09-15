@@ -164,13 +164,18 @@ class CycleOrchestrator:
             return
 
         healthy = self.sandbox is not None and await self.sandbox.health_check()
+        problems = await self.sandbox.check_capacity() if self.sandbox else []
         self._log_event(EventType.NOTABLE_EVENT, -1, payload={
             "kind": "sandbox_health",
             "healthy": healthy,
             "backend": self.config.sandbox_backend.value,
             "image": self.config.sandbox_image,
+            "memory": self.config.sandbox_memory,
             "timeout_seconds": self.config.sandbox_timeout_seconds,
+            "capacity_problems": problems,
         })
+        for problem in problems:
+            logger.warning("Sandbox capacity: %s", problem)
         if not healthy:
             logger.warning(
                 "Execution is enabled but the %s sandbox reports itself "

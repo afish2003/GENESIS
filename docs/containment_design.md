@@ -66,7 +66,7 @@ Agent code is written into `world/sandbox/workspace/` by the controller, execute
 | No host filesystem | bind only `sandbox/workspace` | Doctrine, memory, logs, the repo and `.env` stay invisible |
 | Non-root | `--user 65534:65534` | Limits damage on a container breakout |
 | Immutable base | `--read-only` + tmpfs `/tmp` | Nothing persists between executions except the workspace |
-| Memory cap | `--memory` == `--memory-swap`, `512m` by default (`config.sandbox_memory`) | Prevents host OOM; equal values disable swap |
+| Memory cap | `--memory` == `--memory-swap`, `2g` by default (`config.sandbox_memory`) | Prevents host OOM; equal values disable swap. Also the scratch ceiling — see §9 |
 | CPU cap | `--cpus 1.0` | Keeps the controller responsive |
 | PID cap | `--pids-limit 128` | Stops fork bombs |
 | Wall-clock cap | controller-side `asyncio.wait_for` + `docker kill` | Infinite loops end |
@@ -124,6 +124,7 @@ python scripts/verify_containment.py
 - [x] Container runs with: no network, read-only rootfs, non-root, all capabilities dropped, memory/CPU/PID/time caps
 - [x] Only the workspace is mounted, and read-only — asserted in the command (`tests/test_sandbox.py`) *and* inside a live container (`test_the_repo_is_not_visible`, `test_no_env_file_anywhere`, `test_the_workspace_is_read_only`)
 - [x] Escape test suite — network egress, DNS, the Ollama host, host filesystem reads, `.env`, fork bomb, disk fill, memory exhaustion, infinite loop — each asserted to fail or be contained, in a real container
+- [x] The claims the limits rest on are measured, not assumed: that tmpfs is charged to the memory cgroup, and that raising the cap raises usable scratch (§9)
 - [x] Timeout and kill path tested against a deliberately non-terminating program, including one that ignores SIGTERM, with no container left behind afterwards
 - [x] Output truncation tested against unbounded output
 - [x] `CODE_EXECUTION` events logged, with limit-hit reasons (`ExecutionResult.limit_hit`, routed to `executions.jsonl`)
@@ -133,6 +134,42 @@ python scripts/verify_containment.py
 
 The last two are operational and cannot be checked from inside the repo. They
 are the two that remain open.
+
+### Scratch space, and why it is bounded by memory
+
+`/tmp` is the container's only writable filesystem, it is a tmpfs, and **tmpfs
+pages are charged to the container's memory cgroup**. Measured, not assumed:
+`--memory 512m --tmpfs /tmp:size=1g` writing 900 MiB is OOM-killed at exit 137.
+
+So `size=` is not what contains a runaway write — `--memory` is. `/tmp` is
+therefore sized to `sandbox_memory` rather than carrying its own smaller number,
+which would have been a second, redundant limit whose only effect was to take
+scratch away from the agents. `sandbox_memory` is the one knob:
+
+| `sandbox_memory` | usable scratch |
+|---|---|
+| `512m` | ~300 MiB |
+| `2g` (default) | ~1.7 GiB |
+| `4g` | ~3.5 GiB |
+
+It cannot usefully exceed what the runtime has — on Docker Desktop, the Linux
+VM's allocation, not the Mac's. A `--memory` at or near the runtime total is not
+a cap: the cgroup can never fire, so a runaway container takes the host down
+instead of being killed. `check_capacity()` compares the two at run start, logs
+it in `sandbox_health`, and `scripts/verify_containment.py` prints it.
+
+**There is no disk-backed option.** `--storage-opt size=` is the obvious way to
+get tens of GiB of scratch without spending RAM, and on the overlayfs driver
+Docker Desktop uses it is *accepted and silently ignored* — measured at 1600 MiB
+written under `size=1G`, with `df` reporting 911 GiB available. Using it would
+reintroduce exactly the failure below: a flag that is present, correct, and does
+nothing. `test_storage_opt_is_not_a_usable_alternative` pins that measurement and
+fails if a future driver starts enforcing it, at which point disk-backed scratch
+becomes worth designing.
+
+If a task ever needs scratch on the order of tens of GiB, that is a v2 mechanism
+— a host-prepared fixed-size filesystem image, or XFS project quotas on a Linux
+host — not a bigger number in this config.
 
 ### What the escape suite actually found
 
@@ -144,9 +181,8 @@ have filled the researcher's disk with every other containment property intact,
 which is the single most likely accident in section 2's threat model.
 
 The mount is now `ro`. Nothing is read back out of the workspace — results are
-stdout and stderr — so this costs nothing, and `/tmp` (RAM-backed, 64 MiB) is the
-only writable filesystem in the container. The agents are told this in their
-design prompt.
+stdout and stderr — so this costs nothing, and `/tmp` is the only writable
+filesystem in the container. The agents are told this in their design prompt.
 
 This is the argument for running the suite on every host rather than trusting
 the argv tests: `test_sandbox.py` asserted `-v ...:rw` was present and correct,
@@ -220,3 +256,23 @@ the host rather than the agents.
 containment failure rather than a resource leak: stop the run, keep the logs,
 and do not restart with execution enabled until `verify_containment.py` passes
 and you know where it came from.
+
+
+## 9. Sizing, in one place
+
+The only number most runs need to change:
+
+```yaml
+sandbox_memory: 4g      # container memory AND scratch ceiling; see section 6
+```
+
+Check it against the host before a run that matters:
+
+```bash
+python scripts/verify_containment.py --memory 4g
+```
+
+It prints what the runtime actually has and warns if the cap exceeds 75% of it,
+because past that point the cgroup stops being the thing that fires. On Docker
+Desktop, raise the VM's allocation in Settings > Resources first; the Mac's
+total RAM is not what containers get.
