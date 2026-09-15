@@ -13,12 +13,14 @@ from controller.config import RunConfig
 from controller.phases.sequence import (
     ALL_PHASES,
     DEFAULT_SEQUENCE,
+    OPTIONAL_PHASES,
     SequenceError,
     build_sequence,
     validate_sequence,
 )
 
 FULL = [p.name for p in DEFAULT_SEQUENCE]
+OPTIONAL = [p.name for p in OPTIONAL_PHASES]
 
 
 class TestDefaultSequence:
@@ -38,7 +40,12 @@ class TestDefaultSequence:
         assert build_sequence([]) is DEFAULT_SEQUENCE
 
     def test_every_phase_is_addressable(self):
-        assert set(ALL_PHASES) == set(FULL)
+        assert set(ALL_PHASES) == set(FULL) | set(OPTIONAL)
+
+    def test_optional_phases_are_not_in_the_default(self):
+        """`execution` runs agent-authored code; it must never arrive by default."""
+        assert OPTIONAL == ["execution"]
+        assert not set(OPTIONAL) & set(FULL)
 
     def test_scenario_inject_is_conditional(self):
         assert ALL_PHASES["scenario_inject"].when is not None

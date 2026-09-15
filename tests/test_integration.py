@@ -59,7 +59,7 @@ MOCK_REVISED_DOCTRINE = (
 
 
 def run_cycles(config: RunConfig, *, resume: bool = False,
-               field_hints: dict | None = None) -> tuple:
+               field_hints: dict | None = None, sandbox=None) -> tuple:
     """Execute a real run. Returns (prepared, all events)."""
     prepared = prepare_run(config, resume=resume, load_embeddings=False)
     hints = {"revised_content": MOCK_REVISED_DOCTRINE, **(field_hints or {})}
@@ -71,6 +71,7 @@ def run_cycles(config: RunConfig, *, resume: bool = False,
         log=prepared.log,
         scenario_library=prepared.scenario_library,
         kb_manager=prepared.kb_manager,
+        sandbox=sandbox or prepared.sandbox,
     )
     asyncio.run(orch.run_all_cycles(start_cycle=prepared.start_cycle))
     return prepared, read_events(config)
@@ -588,3 +589,109 @@ class TestCheckpointIntegrity:
         resumed = make_config(tmp_path, total_cycles=3)
         prepared = prepare_run(resumed, resume=True, load_embeddings=False)
         assert prepared.start_cycle == 1
+
+
+# ---------------------------------------------------------------------------
+# Execution
+# ---------------------------------------------------------------------------
+
+class TestExecutionReachesEvaluation:
+    """The same failure shape as the write-only retrieval bug.
+
+    An execution phase that ran the code, logged a tidy CODE_EXECUTION event and
+    left the evaluator scoring `correctness` from the source alone would look
+    completely healthy in the logs and would deliver nothing. So these assert
+    what the evaluator actually saw, and what landed on disk.
+    """
+
+    MARKER = "EXECUTED_OUTPUT_MARKER"
+
+    def _sandbox(self):
+        from controller.sandbox.schemas import (
+            ExecutionOutcome, ExecutionRequest, ExecutionResult,
+        )
+
+        class Recording:
+            def __init__(self) -> None:
+                self.requests: list[ExecutionRequest] = []
+
+            async def run(self, request):
+                self.requests.append(request)
+                return ExecutionResult(
+                    outcome=ExecutionOutcome.OK, exit_code=0,
+                    stdout=f"{TestExecutionReachesEvaluation.MARKER}\n",
+                    duration_seconds=0.2,
+                )
+
+            async def health_check(self):
+                return True
+
+            async def close(self):
+                return None
+
+        return Recording()
+
+    def _run(self, tmp_path):
+        config = make_config(tmp_path, total_cycles=1, task="code",
+                             execution_enabled=True, sandbox_backend="docker")
+        prepared = prepare_run(config, load_embeddings=False)
+        prepared.backend.field_hints.update(
+            {"revised_content": MOCK_REVISED_DOCTRINE,
+             "content": "print('hello from the module')\n"}
+        )
+        seen: list[str] = []
+        original = prepared.backend.complete_structured
+
+        async def recording(messages, response_schema, **kw):
+            seen.extend(m.content for m in messages)
+            return await original(messages, response_schema, **kw)
+
+        prepared.backend.complete_structured = recording  # type: ignore[method-assign]
+        sandbox = self._sandbox()
+        orch = CycleOrchestrator(
+            config=prepared.config, backend=prepared.backend, world=prepared.world,
+            log=prepared.log, scenario_library=prepared.scenario_library,
+            kb_manager=prepared.kb_manager, sandbox=sandbox,
+        )
+        asyncio.run(orch.run_all_cycles(start_cycle=0))
+        return config, sandbox, seen
+
+    def test_the_agents_code_was_actually_handed_to_the_sandbox(self, tmp_path):
+        _, sandbox, _ = self._run(tmp_path)
+        assert len(sandbox.requests) == 1
+        assert "module.py" in sandbox.requests[0].files
+
+    def test_the_output_reached_the_evaluators_prompt(self, tmp_path):
+        """The load-bearing assertion. Without it the phase is write-only."""
+        _, _, seen = self._run(tmp_path)
+        assert any(self.MARKER in text for text in seen), (
+            "execution output never appeared in any prompt sent to the model"
+        )
+
+    def test_the_evaluator_was_told_to_score_against_the_run(self, tmp_path):
+        _, _, seen = self._run(tmp_path)
+        assert any("judged against the execution result" in t for t in seen)
+
+    def test_executions_log_exists_and_records_the_run(self, tmp_path):
+        config, _, _ = self._run(tmp_path)
+        path = config.run_log_dir / "executions.jsonl"
+        assert path.exists()
+        rows = [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
+        assert len(rows) == 1
+        assert rows[0]["payload"]["outcome"] == "OK"
+        assert rows[0]["payload"]["entrypoint"].startswith("python ")
+
+    def test_disabled_by_default_nothing_runs(self, tmp_path):
+        config = make_config(tmp_path, total_cycles=1, task="code")
+        sandbox = self._sandbox()
+        run_cycles(config, sandbox=sandbox)
+        assert sandbox.requests == []
+        rows = (config.run_log_dir / "executions.jsonl").read_text().strip()
+        assert rows == ""
+
+    def test_sandbox_health_is_recorded_at_run_start(self, tmp_path):
+        config, _, _ = self._run(tmp_path)
+        events = read_events(config)
+        health = [e for e in events
+                  if e["payload"].get("kind") == "sandbox_health"]
+        assert len(health) == 1 and health[0]["payload"]["healthy"] is True

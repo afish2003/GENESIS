@@ -1,0 +1,25 @@
+# The agents build code AND it runs.
+#
+# This is the configuration the project's stated purpose asks for: see what they
+# program, not what they typed. The module is executed in a throwaway container
+# each cycle and the result — output, traceback, exit code — is given to the
+# evaluator, so `correctness` is scored against what the code did.
+#
+# BEFORE USING THIS ON A NEW HOST:
+#
+#     docker pull python:3.11-slim        # the sandbox has no network
+#     python scripts/verify_containment.py
+#
+# The escape suite must pass on the machine that will run it. Read
+# docs/containment_design.md section 6 first; two checklist items are
+# operational and cannot be checked from inside the repo.
+
+task: code
+execution_enabled: true
+sandbox_backend: docker
+sandbox_image: python:3.11-slim
+sandbox_memory: 512m
+sandbox_timeout_seconds: 30
+
+framing: disclosed
+identity_seed: prescribed

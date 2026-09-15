@@ -23,6 +23,7 @@ from controller.phases import (
     doctrine_revision,
     ethical_log,
     evaluation,
+    execution,
     identity_revision,
     interpretation,
     load_state,
@@ -35,6 +36,7 @@ from controller.phases import (
     scenario_inject,
 )
 from controller.retrieval.databases import KnowledgeBaseManager
+from controller.sandbox.base import ExecutionSandbox
 from controller.world.artifacts import ScenarioEvent
 from controller.monitor.watchdog import Watchdog
 from controller.phases.sequence import build_sequence
@@ -63,8 +65,15 @@ class CycleState:
     pending_events: list[EventEnvelope] = field(default_factory=list)
     #: Phases that raised this cycle. persist_state and the watchdog consult it.
     failed_phases: list[str] = field(default_factory=list)
+    #: The configured ExecutionSandbox, or None. Passed through CycleState the
+    #: same way kb_manager is, so the execution phase keeps the standard phase
+    #: signature and a test can substitute a fake.
+    sandbox: Optional["ExecutionSandbox"] = field(default=None)
     proposed_protocol: Optional[dict] = None
     evaluation_result: Optional[dict] = None
+    #: Set by the execution phase; read by the task's evaluation prompt. None
+    #: means the code was not run, which the evaluator is told explicitly.
+    execution_result: Optional[dict] = None
     events: list[EventEnvelope] = field(default_factory=list)
 
 
@@ -79,6 +88,7 @@ class CycleOrchestrator:
         log: AppendOnlyJSONLLogger,
         scenario_library: Optional[dict[int, ScenarioEvent]] = None,
         kb_manager: Optional[KnowledgeBaseManager] = None,
+        sandbox: Optional[ExecutionSandbox] = None,
     ) -> None:
         self.config = config
         self.backend = backend
@@ -86,10 +96,13 @@ class CycleOrchestrator:
         self.logger = log
         self.scenario_library = scenario_library or {}
         self.kb_manager = kb_manager
+        self.sandbox = sandbox
         # Deterministic monitoring. Observes controller-side state only and
         # never contributes to AgentContext, so the agents cannot perceive it.
         self.watchdog = Watchdog(config) if config.watchdog_enabled else None
-        self.sequence = build_sequence(config.phase_sequence)
+        self.sequence = build_sequence(
+            config.phase_sequence, execution_enabled=config.execution_enabled
+        )
         # Everything logged during the current cycle, so the watchdog can
         # observe the cycle exactly as the logs record it.
         self._cycle_events: list[EventEnvelope] = []
@@ -101,7 +114,11 @@ class CycleOrchestrator:
             "total_cycles": self.config.total_cycles,
             "condition": self.config.condition.value,
             "model": self.config.model_name,
+            "execution_enabled": self.config.execution_enabled,
+            "sandbox_backend": self.config.sandbox_backend.value,
         })
+
+        await self._check_sandbox()
 
         for cycle_id in range(start_cycle, self.config.total_cycles):
             failed = await self.run_cycle(cycle_id)
@@ -136,6 +153,33 @@ class CycleOrchestrator:
             "completed_cycles": self.config.total_cycles,
         })
 
+    async def _check_sandbox(self) -> None:
+        """Say once, at the top of the run, whether execution can actually work.
+
+        Without this the answer arrives a cycle later and one file over, as a
+        run of REFUSED outcomes in executions.jsonl — which in the score data is
+        indistinguishable from agents who write code that does not run.
+        """
+        if not self.config.execution_enabled:
+            return
+
+        healthy = self.sandbox is not None and await self.sandbox.health_check()
+        self._log_event(EventType.NOTABLE_EVENT, -1, payload={
+            "kind": "sandbox_health",
+            "healthy": healthy,
+            "backend": self.config.sandbox_backend.value,
+            "image": self.config.sandbox_image,
+            "timeout_seconds": self.config.sandbox_timeout_seconds,
+        })
+        if not healthy:
+            logger.warning(
+                "Execution is enabled but the %s sandbox reports itself "
+                "unavailable. The run continues and every execution will be "
+                "recorded as refused or errored — read executions.jsonl before "
+                "trusting any correctness score from this run.",
+                self.config.sandbox_backend.value,
+            )
+
     async def run_cycle(self, cycle_id: int) -> list[str]:
         """Execute a single cycle (all 14 phases)."""
         cycle_started = time.monotonic()
@@ -147,6 +191,7 @@ class CycleOrchestrator:
             cycle_id=cycle_id,
             scenario_library=self.scenario_library,
             kb_manager=self.kb_manager,
+            sandbox=self.sandbox,
         )
 
         # Walk the sequence. Order is data — see controller/phases/sequence.py.

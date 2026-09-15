@@ -9,10 +9,13 @@ Threat model is accident and prompt-space pressure, not a kernel 0-day. For
 stronger isolation the runtime can be pointed at gVisor (`--runtime runsc`)
 without changing anything else here.
 
-NOT YET WIRED INTO THE CYCLE LOOP. Nothing in the current experimental design
-requires code execution, and enabling it is gated on the precondition
-checklist in the design document — including an escape-test suite that must
-pass on the actual host.
+Reachable from the cycle loop via the optional `execution` phase, behind two
+separate switches: `execution_enabled` adds the phase, `sandbox_backend=docker`
+selects this class over NullSandbox. Neither is on by default.
+
+Before enabling it on a new host, run `scripts/verify_containment.py` — the
+properties asserted in tests/test_sandbox.py are properties of the *command*,
+and only that script checks they hold in an actual container on this machine.
 """
 
 from __future__ import annotations
@@ -74,7 +77,8 @@ class DockerSandbox(ExecutionSandbox):
             "--rm",                         # ephemeral: no cross-execution persistence
             "--network", "none",            # no exfiltration, no fetching, no LAN, no Ollama
             "--read-only",                  # immutable rootfs
-            "--tmpfs", "/tmp:size=64m,noexec,nosuid",
+            # The only writable filesystem, and it is RAM-backed and capped.
+            "--tmpfs", "/tmp:size=64m,nosuid",
             "--user", "65534:65534",        # nobody
             "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges",
@@ -82,8 +86,17 @@ class DockerSandbox(ExecutionSandbox):
             "--memory-swap", self.memory,   # equal to memory => swap disabled
             "--cpus", self.cpus,
             "--pids-limit", str(self.pids_limit),
-            # The ONLY mount. Never the repo, never .env, never world/ above this.
-            "-v", f"{workspace}:/workspace:rw",
+            # The ONLY mount, and read-only.
+            #
+            # It was `rw`, which left the disk-fill vector — the most likely
+            # accident in the threat model — uncontained: --memory caps RAM and
+            # --tmpfs caps /tmp, but a bind mount to the host filesystem has no
+            # quota at all, so `open("big","w").write("x" * huge)` in a loop
+            # filled the researcher's disk with every other limit intact.
+            # Nothing reads files back out of the workspace — results are
+            # stdout/stderr — so read-only costs nothing and closes it. Agent
+            # code that needs scratch space uses /tmp, which is capped.
+            "-v", f"{workspace}:/workspace:ro",
             "-w", "/workspace",
             self.image,
             "timeout", "--signal=KILL", str(int(timeout)),
@@ -115,11 +128,22 @@ class DockerSandbox(ExecutionSandbox):
                     proc.communicate(), timeout=timeout + 15
                 )
             except asyncio.TimeoutError:
-                await self._kill(proc, container_name)
+                # The in-container `timeout` should have ended this already, so
+                # reaching here means the runtime itself is not responding. That
+                # is a containment event, not a slow program.
+                killed = await self._kill(proc, container_name)
                 return ExecutionResult(
                     outcome=ExecutionOutcome.TIMEOUT,
                     duration_seconds=time.monotonic() - started,
-                    detail=f"Container did not exit within {timeout + 15:.0f}s; killed.",
+                    limit_hit=("runtime_unresponsive" if killed
+                               else "container_may_still_be_running"),
+                    detail=(
+                        f"Container did not exit within {timeout + 15:.0f}s. "
+                        + ("Killed." if killed else
+                           f"THE KILL ALSO FAILED: container {container_name!r} "
+                           f"may still be running. See the recovery procedure in "
+                           f"docs/containment_design.md.")
+                    ),
                 )
 
             stdout, t1 = self.truncate(raw_out.decode("utf-8", errors="replace"))
@@ -128,9 +152,13 @@ class DockerSandbox(ExecutionSandbox):
 
             outcome = ExecutionOutcome.OK
             detail = ""
+            limit_hit = ""
             if proc.returncode == _EXIT_TIMEOUT_KILL:
-                # SIGKILL: the timeout fired, or the OOM killer did.
+                # SIGKILL: the timeout fired, or the OOM killer did. The two are
+                # not distinguishable from the exit code alone, and pretending
+                # otherwise would put a guess in the research record.
                 outcome = ExecutionOutcome.TIMEOUT
+                limit_hit = "wall_clock_or_memory"
                 detail = f"Killed after {timeout:.0f}s, or exceeded {self.memory} memory."
             elif proc.returncode != 0:
                 outcome = ExecutionOutcome.NONZERO_EXIT
@@ -142,6 +170,7 @@ class DockerSandbox(ExecutionSandbox):
                 stderr=stderr,
                 duration_seconds=elapsed,
                 truncated=t1 or t2,
+                limit_hit=limit_hit,
                 detail=detail,
             )
 
@@ -170,13 +199,18 @@ class DockerSandbox(ExecutionSandbox):
             name = safe_artifact_id(raw_name, fallback="file.txt")
             (workspace / name).write_text(content, encoding="utf-8")
 
-    async def _kill(self, proc, container: str | None = None) -> None:
-        """Kill the container, then the client.
+    async def _kill(self, proc, container: str | None = None) -> bool:
+        """Kill the container, then the client. True if the container is gone.
 
         Killing only the client left the container running: --rm cleans up when
         the container exits, not when the client dies, so the "outer deadline in
         case the runtime wedges" did not actually stop a wedged container.
+
+        The return value is load-bearing: a failed kill means a container is
+        still running with the agents' code in it, and that has to reach the
+        research record rather than being logged at ERROR and forgotten.
         """
+        killed = container is None
         if container:
             try:
                 killer = await asyncio.create_subprocess_exec(
@@ -185,13 +219,22 @@ class DockerSandbox(ExecutionSandbox):
                     stderr=asyncio.subprocess.DEVNULL,
                 )
                 await asyncio.wait_for(killer.wait(), timeout=15)
+                killed = killer.returncode == 0
             except (OSError, asyncio.TimeoutError) as e:
                 logger.error("Could not kill container %s: %s", container, e)
+                killed = False
+            if not killed:
+                logger.critical(
+                    "Container %s did not die. It may still be running agent "
+                    "code. Recovery: docs/containment_design.md section 8.",
+                    container,
+                )
         try:
             proc.kill()
             await proc.wait()
         except ProcessLookupError:
             pass
+        return killed
 
     async def health_check(self) -> bool:
         if shutil.which(self.runtime_argv[0]) is None:

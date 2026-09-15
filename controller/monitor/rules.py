@@ -205,6 +205,50 @@ def sandbox_escape_attempt(obs: CycleObservation) -> list[Anomaly]:
     return out
 
 
+def execution_health(obs: CycleObservation) -> list[Anomaly]:
+    """Distinguish "the code did not work" from "nothing ran".
+
+    In the score data these are identical: `correctness` is low either way. The
+    difference is that one is a finding about the agents and the other is a
+    broken controller, so it has to be visible at the time rather than inferred
+    from a run of suspiciously bad scores.
+    """
+    out = []
+    for e in obs.events:
+        if e.get("event_type") != "CODE_EXECUTION":
+            continue
+        payload = e.get("payload", {})
+        outcome = payload.get("outcome")
+
+        if outcome in ("REFUSED", "SANDBOX_ERROR"):
+            out.append(Anomaly(
+                rule="execution_health",
+                severity=Severity.WARNING,
+                detail=(
+                    f"Execution did not happen ({outcome}): "
+                    f"{payload.get('detail', '')}. Correctness scores for this "
+                    f"cycle were produced without running the code."
+                ),
+                cycle_id=obs.cycle_id,
+                data={"outcome": outcome, "detail": payload.get("detail", "")},
+            ))
+
+        # A container the controller could not kill is the one failure here that
+        # is about the host rather than the experiment.
+        if payload.get("limit_hit") == "container_may_still_be_running":
+            out.append(Anomaly(
+                rule="execution_health",
+                severity=Severity.CRITICAL,
+                detail=(
+                    "A sandbox container could not be killed and may still be "
+                    "running agent code. See docs/containment_design.md section 8."
+                ),
+                cycle_id=obs.cycle_id,
+                data={"detail": payload.get("detail", "")},
+            ))
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Drift — known fragilities from the April audit
 # ---------------------------------------------------------------------------
@@ -315,6 +359,7 @@ ALL_RULES: list[Rule] = [
     doctrine_applied,
     memory_advancing,
     sandbox_escape_attempt,
+    execution_health,
     doctrine_growth,
     context_budget,
     cycle_time_drift,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from enum import Enum
 from pathlib import Path
@@ -183,6 +184,18 @@ class RunConfig(BaseModel):
     sandbox_image: str = Field(default="python:3.11-slim")
     sandbox_runtime: str = Field(default="docker", description="docker | podman")
     sandbox_memory: str = Field(default="512m")
+    sandbox_timeout_seconds: float = Field(
+        default=30.0, ge=1.0, le=300.0,
+        description="Wall-clock ceiling for one execution, enforced in and out "
+                    "of the container",
+    )
+    execution_enabled: bool = Field(
+        default=False,
+        description="Add the `execution` phase to the default sequence, running "
+                    "the cycle's artifact through the configured sandbox. Off by "
+                    "default: see docs/containment_design.md for what must be "
+                    "true before turning it on.",
+    )
 
     doctrine_apply_mode: str = Field(
         default="replace",
@@ -309,6 +322,22 @@ class RunConfig(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def _warn_on_execution_without_a_sandbox(self) -> "RunConfig":
+        """Execution enabled against NullSandbox refuses every run, silently.
+
+        Not an error: a REFUSED outcome is logged like any other and the run is
+        still valid, just without execution. But it is never what anyone means,
+        and the refusals only become visible a cycle later in executions.jsonl.
+        """
+        if self.execution_enabled and self.sandbox_backend is SandboxBackend.NULL:
+            logging.getLogger(__name__).warning(
+                "execution_enabled is set but sandbox_backend is 'null', so every "
+                "execution will be refused. Set SANDBOX_BACKEND=docker to actually "
+                "run the agents' code."
+            )
+        return self
+
     @property
     def run_log_dir(self) -> Path:
         return self.research_logs_dir / self.run_id
@@ -362,6 +391,11 @@ def load_config(
         "PHASE_SEQUENCE": "phase_sequence",
         "TASK": "task",
         "SANDBOX_BACKEND": "sandbox_backend",
+        "SANDBOX_IMAGE": "sandbox_image",
+        "SANDBOX_RUNTIME": "sandbox_runtime",
+        "SANDBOX_MEMORY": "sandbox_memory",
+        "SANDBOX_TIMEOUT_SECONDS": "sandbox_timeout_seconds",
+        "EXECUTION_ENABLED": "execution_enabled",
         "INDEPENDENT_PROPOSALS": "independent_proposals",
         "DOCTRINE_APPLY_MODE": "doctrine_apply_mode",
         "WATCHDOG_ENABLED": "watchdog_enabled",

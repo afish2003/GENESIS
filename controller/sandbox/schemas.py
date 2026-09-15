@@ -41,4 +41,12 @@ class ExecutionResult(BaseModel):
     stderr: str = ""
     duration_seconds: float = 0.0
     truncated: bool = False
+    limit_hit: str = Field(
+        default="",
+        description="Which limit ended the run, as a stable token rather than "
+                    "prose: wall_clock_or_memory | runtime_unresponsive | "
+                    "container_may_still_be_running. Empty when no limit was "
+                    "hit. Monitor rules key off this; `detail` is for humans "
+                    "and its wording is not stable.",
+    )
     detail: str = Field(default="", description="Why a non-OK outcome occurred")

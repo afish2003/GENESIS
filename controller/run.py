@@ -24,6 +24,7 @@ from controller.inference.factory import create_backend
 from controller.logging.logger import AppendOnlyJSONLLogger
 from controller.prompts import materialise_prompts, materialise_world_template
 from controller.retrieval.databases import KnowledgeBaseManager
+from controller.sandbox import ExecutionSandbox, create_sandbox
 from controller.scenarios.library import load_scenario_library
 from controller.world.reset import initialize_world, load_checkpoint
 from controller.world.state import WorldState
@@ -92,6 +93,7 @@ class PreparedRun:
     log: AppendOnlyJSONLLogger
     scenario_library: dict
     kb_manager: KnowledgeBaseManager
+    sandbox: ExecutionSandbox
     start_cycle: int
 
 
@@ -151,6 +153,17 @@ def prepare_run(
     )
     kb_manager.initialize(load_embeddings=load_embeddings)
 
+    # NullSandbox unless the researcher configured otherwise. Built once per run
+    # rather than per phase; whether it actually works is checked by the
+    # orchestrator at RUN_START, where the answer can be awaited and logged.
+    sandbox = create_sandbox(config)
+    if config.execution_enabled:
+        logger.info(
+            "Execution is ENABLED: backend=%s, image=%s, %.0fs per run",
+            config.sandbox_backend.value, config.sandbox_image,
+            config.sandbox_timeout_seconds,
+        )
+
     return PreparedRun(
         config=config,
         backend=create_backend(config),
@@ -158,5 +171,7 @@ def prepare_run(
         log=log,
         scenario_library=load_scenario_library(config),
         kb_manager=kb_manager,
+        sandbox=sandbox,
         start_cycle=start_cycle,
     )
+

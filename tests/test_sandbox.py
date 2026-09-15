@@ -77,7 +77,17 @@ class TestContainmentFlags:
 
     def test_only_the_workspace_is_mounted(self):
         mounts = [self.args[i + 1] for i, a in enumerate(self.args) if a == "-v"]
-        assert mounts == ["/tmp/ws:/workspace:rw"]
+        assert mounts == ["/tmp/ws:/workspace:ro"]
+
+    def test_the_workspace_mount_is_read_only(self):
+        """The bind mount is the one place with no size limit on it, so it must
+        not be writable — see the comment in _container_args."""
+        mounts = [self.args[i + 1] for i, a in enumerate(self.args) if a == "-v"]
+        assert all(m.endswith(":ro") for m in mounts)
+
+    def test_the_only_writable_filesystem_is_capped(self):
+        tmpfs = [self.args[i + 1] for i, a in enumerate(self.args) if a == "--tmpfs"]
+        assert tmpfs == ["/tmp:size=64m,nosuid"]
 
     def test_timeout_is_enforced_inside_the_container(self):
         assert "timeout" in self.args

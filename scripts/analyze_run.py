@@ -47,6 +47,11 @@ def analyze_run(run_dir: Path) -> dict:
         "ethical_tensions": {"axiom": 0, "flux": 0, "total": 0},
         "retrieval_queries": {"axiom": 0, "flux": 0},
         "discussion_turns": 0,
+        # Empty for a text-only run, which is the common case. Reported anyway
+        # when non-empty: an execution result that nothing summarises is the
+        # same write-only shape retrieval had for months.
+        "executions": {"total": 0, "by_outcome": {}, "mean_seconds": 0.0,
+                       "limits_hit": {}},
     }
 
     # Count cycles
@@ -97,6 +102,22 @@ def analyze_run(run_dir: Path) -> dict:
             if agent in metrics["retrieval_queries"]:
                 metrics["retrieval_queries"][agent] += 1
 
+    # Code execution, when the run had any
+    executions = load_jsonl(run_dir / "executions.jsonl")
+    if executions:
+        durations = []
+        for e in executions:
+            payload = e.get("payload", {})
+            outcome = payload.get("outcome", "?")
+            ex = metrics["executions"]
+            ex["total"] += 1
+            ex["by_outcome"][outcome] = ex["by_outcome"].get(outcome, 0) + 1
+            if payload.get("limit_hit"):
+                ex["limits_hit"][payload["limit_hit"]] = \
+                    ex["limits_hit"].get(payload["limit_hit"], 0) + 1
+            durations.append(payload.get("duration_seconds", 0.0))
+        metrics["executions"]["mean_seconds"] = sum(durations) / len(durations)
+
     # Discussion turns
     transcripts = load_jsonl(run_dir / "transcripts.jsonl")
     metrics["discussion_turns"] = sum(1 for e in transcripts if e.get("event_type") == "DISCUSSION_TURN")
@@ -128,6 +149,26 @@ def print_summary(metrics: dict) -> None:
     else:
         print("    (no evaluations)")
     print()
+    ex = metrics.get("executions", {})
+    if ex.get("total"):
+        print("  Code Execution:")
+        ran = ex["by_outcome"].get("OK", 0)
+        print(f"    Runs: {ex['total']}  clean: {ran}  "
+              f"mean {ex['mean_seconds']:.2f}s")
+        for outcome, n in sorted(ex["by_outcome"].items()):
+            if outcome != "OK":
+                print(f"    {outcome}: {n}")
+        # REFUSED/SANDBOX_ERROR are the controller failing, not the agents, and
+        # they depress `correctness` exactly like bad code does.
+        broken = sum(ex["by_outcome"].get(k, 0)
+                     for k in ("REFUSED", "SANDBOX_ERROR"))
+        if broken:
+            print(f"    WARNING: {broken} run(s) never executed. Correctness "
+                  f"scores for those cycles measure the host, not the agents.")
+        for limit, n in sorted(ex["limits_hit"].items()):
+            print(f"    limit hit — {limit}: {n}")
+        print()
+
     print("  Doctrine Changes:")
     dc = metrics["doctrine_changes"]
     print(f"    Proposed: {dc['proposed']}  Approved: {dc['approved']}  Rejected: {dc['rejected']}")

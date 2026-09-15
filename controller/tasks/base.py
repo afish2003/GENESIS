@@ -15,9 +15,11 @@ The cycle loop stays identical. Swapping the task changes what gets built and
 how it is scored, without touching orchestration, logging, doctrine, identity,
 memory or retrieval.
 
-Tasks produce *artifacts*, not side effects. A task whose artifact is code does
-not execute it — execution is a separate capability behind ExecutionSandbox,
-which refuses by default (see docs/containment_design.md).
+Tasks produce *artifacts*, not side effects. Execution is a separate capability
+behind ExecutionSandbox, which refuses by default (see
+docs/containment_design.md). A task that wants its artifact run declares that by
+returning an ExecutionRequest from `execution_request`; the `execution` phase
+still only runs when the researcher has opted in.
 """
 
 from __future__ import annotations
@@ -30,6 +32,7 @@ from pydantic import BaseModel
 if TYPE_CHECKING:
     from controller.config import RunConfig
     from controller.cycle import CycleState
+    from controller.sandbox.schemas import ExecutionRequest
     from controller.world.state import WorldState
 
 
@@ -73,6 +76,23 @@ class Task(ABC):
     ) -> str | None:
         """The evaluator's instruction, or None when there is nothing to score."""
         ...
+
+    def execution_request(
+        self, world: WorldState, cycle: CycleState, timeout_seconds: float
+    ) -> "ExecutionRequest | None":
+        """What to run for this cycle's artifact, or None if nothing should run.
+
+        Default: nothing. A task opts in by overriding this, and even then the
+        `execution` phase only appears in the sequence when the researcher has
+        enabled it.
+
+        The *entrypoint is built here, by the controller* — never taken from
+        model output. The container's isolation would hold either way, but an
+        agent that can name the command it runs can also be talked into naming
+        one by a retrieved document, and this is the cheapest place to close
+        that path.
+        """
+        return None
 
     def scores_schema(self) -> Type[BaseModel]:
         """Build a scores model from `dimensions`.

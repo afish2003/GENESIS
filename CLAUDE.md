@@ -24,6 +24,9 @@ pytest tests/ -v
 # Run a single test file
 pytest tests/test_schemas.py -v
 
+# Skip the tests that start real containers (they run whenever Docker is up)
+pytest tests/ -m "not live_sandbox"
+
 # Run a specific test
 pytest tests/test_schemas.py::TestEventEnvelope::test_basic_creation -v
 
@@ -41,6 +44,10 @@ python scripts/watch_run.py --run-id RUN_001 --replay --full
 
 # Compare experimental arms
 python scripts/compare_arms.py --runs RUN_A RUN_B --labels a b
+
+# Before enabling code execution on a host: real containers, real escape tests
+docker pull python:3.11-slim
+python scripts/verify_containment.py
 ```
 
 No linter is currently configured. Python 3.11+ is required (uses modern typing features).
@@ -51,7 +58,7 @@ No linter is currently configured. Python 3.11+ is required (uses modern typing 
 
 `CycleOrchestrator` (`controller/cycle.py`) walks a phase sequence defined as data in `controller/phases/sequence.py`. The default is:
 
-1. **Load State** → 2. **Reflection** (each agent alone) → 3. **Scenario Check** → 4. **Scenario Inject** (conditional) → 5. **Discussion** (agent-to-agent, 4-8 turns each) → 6. **Retrieval** (KB queries) → 7. **Task Design** (the artifact named by `config.task`) → 8. **Evaluation** (fresh-context evaluator, scored on the dimensions that task declares) → 9. **Interpretation** → 10. **Doctrine Revision** (requires mutual approval) → 11. **Identity Revision** (independent) → 12. **Ethical Log** → 13. **Memory Summarization** → 14. **Persist State** (write artifacts + diffs)
+1. **Load State** → 2. **Reflection** (each agent alone) → 3. **Scenario Check** → 4. **Scenario Inject** (conditional) → 5. **Discussion** (agent-to-agent, 4-8 turns each) → 6. **Retrieval** (KB queries) → 7. **Task Design** (the artifact named by `config.task`) → *(optional: **Execution**, when `execution_enabled`)* → 8. **Evaluation** (fresh-context evaluator, scored on the dimensions that task declares) → 9. **Interpretation** → 10. **Doctrine Revision** (requires mutual approval) → 11. **Identity Revision** (independent) → 12. **Ethical Log** → 13. **Memory Summarization** → 14. **Persist State** (write artifacts + diffs)
 
 Each phase has its own module in `controller/phases/` with corresponding Pydantic input/output schemas in `controller/phases/schemas.py`.
 
@@ -67,7 +74,7 @@ Each phase has its own module in `controller/phases/` with corresponding Pydanti
 
 - **Monitoring** (`controller/monitor/`): deterministic rules run after each cycle and write `anomalies.jsonl`. No inference — a model-based monitor could be argued out of firing, and this experiment deliberately pressures agents toward persuasion.
 
-- **Sandbox** (`controller/sandbox/`): `ExecutionSandbox` for agent-authored code. `NullSandbox` refuses everything and is the default; not yet wired into the loop. See `docs/containment_design.md`.
+- **Sandbox** (`controller/sandbox/`): `ExecutionSandbox` for agent-authored code. `NullSandbox` refuses everything and is the default. With `execution_enabled` and `sandbox_backend=docker`, the optional `execution` phase runs the cycle's artifact in a hardened container (no network, read-only, non-root, capped) and feeds the result to the evaluator, so `correctness` is scored against what the code did. Run `scripts/verify_containment.py` on a host before enabling it. See `docs/containment_design.md`.
 
 - **World State** (`controller/world/`): `WorldState` owns all artifact I/O. Reads everything at cycle start, writes + computes diffs at cycle end. Supports checkpointing for run resume. Artifact types (Pydantic models in `world/artifacts.py`): DoctrineDocument, IdentityStatement, MemoryEntry, ProtocolDocument, EthicalLogEntry, RelationshipLogEntry, ScenarioEvent.
 
@@ -75,7 +82,7 @@ Each phase has its own module in `controller/phases/` with corresponding Pydanti
 
 - **Retrieval** (`controller/retrieval/`): BM25 (top-20 candidates) + sentence-transformer reranking (`BAAI/bge-small-en-v1.5`, top-5). Four knowledge bases: general, technical, governance, self_history. The scenario library is deliberately *not* indexed — agents could otherwise retrieve pressure events before injection. Results are summarised into the agent's context for the rest of the cycle.
 
-- **Logging** (`controller/logging/`): `AppendOnlyJSONLLogger` — write-only, never modifies. Events route to 9 JSONL files (transcripts, retrieval, doctrine_diffs, memory_diffs, protocol_diffs, evaluations, scenario_events, notable_events, anomalies).
+- **Logging** (`controller/logging/`): `AppendOnlyJSONLLogger` — write-only, never modifies. Events route to 10 JSONL files (transcripts, retrieval, doctrine_diffs, memory_diffs, protocol_diffs, evaluations, executions, scenario_events, notable_events, anomalies).
 
 - **Scenarios** (`controller/scenarios/`): YAML-defined events in `controller/scenarios/events/`. Injected at configured cycles (default: 20, 40, 60, 80).
 
@@ -90,6 +97,7 @@ The axes that make this a platform rather than one experiment:
 | `agents` | The roster. Each entry needs a `<name>_system.md` and `identity_<name>.md` in the sources. |
 | `task` | `protocol` or `code` — what gets built and how it is scored. |
 | `phase_sequence` | Reorder or omit phases; validated against known dependencies. |
+| `execution_enabled` | Add the `execution` phase, running the artifact in the sandbox. Off by default. |
 | `framing` | `disclosed` / `undisclosed` — whether agents are told they are studied. |
 | `identity_seed` | `prescribed` / `minimal` — how much identity is given rather than developed. |
 | `inference_backend` | `ollama` / `openai` / `mock`. |

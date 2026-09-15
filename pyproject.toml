@@ -45,3 +45,6 @@ genesis = "controller.main:cli_entry"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "live_sandbox: starts real containers; skipped unless a runtime is up. See scripts/verify_containment.py.",
+]

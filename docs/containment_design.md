@@ -1,8 +1,8 @@
 # Containment Design — running agent-authored code safely
 
-**Status**: implemented but NOT wired into the cycle loop. `controller/sandbox/` exists and is tested; `create_sandbox` has no caller outside its own tests, so agent code is stored and never run.
-**Written**: 2026-09-12
-**Applies to**: enabling execution. The mechanism exists; the preconditions below are what gate turning it on.
+**Status**: wired and verified. The optional `execution` phase runs the cycle's artifact through the configured sandbox and logs `CODE_EXECUTION`. Both switches are off by default (`execution_enabled`, `sandbox_backend`), and the escape suite passes against real containers on the OptiPlex.
+**Written**: 2026-09-12 · **Execution enabled**: 2026-09-14
+**Applies to**: enabling execution on any host. Section 6 is the checklist; `scripts/verify_containment.py` mechanically checks the parts of it that can be.
 
 ---
 
@@ -12,7 +12,7 @@ GENESIS v1 has no sandbox, by explicit design. `PLAN.md` §4:
 
 > All agent actions are mediated through the controller. Agents never hold a shell, a filesystem path outside the sealed world, or a network connection. The containment boundary is architectural and logical, not OS-level. There is no VM and no Docker container in version 1.
 
-That holds *only because agents cannot execute anything*. `controller/sandbox/docker.py` does use `asyncio.create_subprocess_exec` — it is the sandbox itself — but nothing reaches it: no phase calls `create_sandbox`, and `NullSandbox` refuses by default. Agent output is text that the controller parses into Pydantic models; the `code` task stores a module and never runs it.
+That held *only because agents could not execute anything*, and it is no longer the description of the system. `controller/phases/execution.py` hands the cycle's artifact to a sandbox, and with `execution_enabled` plus `sandbox_backend=docker` the agents' code runs in a container. The boundary is now OS-level as well as architectural, which is what makes that acceptable — but `PLAN.md` §4 as written describes the default configuration, not this one.
 
 *(Before 2026-09-13 this paragraph claimed the controller contained no subprocess call at all, which stopped being true when the sandbox was written. That sentence is the stated justification for `PLAN.md` §4's "no OS-level sandbox by design", so it is worth keeping accurate.)*
 
@@ -110,23 +110,113 @@ Every execution is logged as a first-class event — `CODE_EXECUTION` routed to 
 
 ## 6. Preconditions before enabling execution
 
-Every item must be true. None is optional.
+Every item must be true. None is optional. The mechanical ones are checked by
+`scripts/verify_containment.py`, which runs `tests/test_containment_live.py`
+against real containers and **treats a skip as a failure** — a checklist item you
+can satisfy by having Docker closed is not a checklist item.
+
+```bash
+docker pull python:3.11-slim        # the sandbox has no network; pull first
+python scripts/verify_containment.py
+```
 
 - [x] `ExecutionSandbox` implemented with `NullSandbox` as the default
 - [x] Container runs with: no network, read-only rootfs, non-root, all capabilities dropped, memory/CPU/PID/time caps
-- [x] Only the workspace is mounted (asserted in `tests/test_sandbox.py`); an *in-container* check that the repo and `.env` are unreachable is still outstanding
-- [ ] Escape test suite — network egress, host filesystem reads, fork bomb, disk fill, infinite loop — each asserted to fail or be contained
-- [ ] Timeout and kill path tested against a deliberately non-terminating program
+- [x] Only the workspace is mounted, and read-only — asserted in the command (`tests/test_sandbox.py`) *and* inside a live container (`test_the_repo_is_not_visible`, `test_no_env_file_anywhere`, `test_the_workspace_is_read_only`)
+- [x] Escape test suite — network egress, DNS, the Ollama host, host filesystem reads, `.env`, fork bomb, disk fill, memory exhaustion, infinite loop — each asserted to fail or be contained, in a real container
+- [x] Timeout and kill path tested against a deliberately non-terminating program, including one that ignores SIGTERM, with no container left behind afterwards
 - [x] Output truncation tested against unbounded output
-- [ ] `CODE_EXECUTION` events logged, with limit-hit reasons
-- [ ] Documented, reviewed recovery procedure for a container that will not die
+- [x] `CODE_EXECUTION` events logged, with limit-hit reasons (`ExecutionResult.limit_hit`, routed to `executions.jsonl`)
+- [x] Documented recovery procedure for a container that will not die — section 8
 - [ ] Run under a dedicated low-privilege OS user, not the researcher's account
 - [ ] Host backups verified before the first execution-enabled run
 
+The last two are operational and cannot be checked from inside the repo. They
+are the two that remain open.
+
+### What the escape suite actually found
+
+The suite was written to confirm the design; it found a hole instead. The
+workspace was bind-mounted `rw`, and a bind mount to the host filesystem **has
+no size limit** — `--memory` caps RAM and `--tmpfs size=` caps `/tmp`, but
+neither touches a bind mount. So `open("/workspace/big","w")` in a loop would
+have filled the researcher's disk with every other containment property intact,
+which is the single most likely accident in section 2's threat model.
+
+The mount is now `ro`. Nothing is read back out of the workspace — results are
+stdout and stderr — so this costs nothing, and `/tmp` (RAM-backed, 64 MiB) is the
+only writable filesystem in the container. The agents are told this in their
+design prompt.
+
+This is the argument for running the suite on every host rather than trusting
+the argv tests: `test_sandbox.py` asserted `-v ...:rw` was present and correct,
+and it *was* present and correct. It was the property that was wrong.
+
 ## 7. Where this sits relative to the research plan
 
-`PLAN.md` scopes v1 to protocol *documents* — text. Nothing in the current experimental design requires execution, and the BASELINE vs MEM_RESET question can be answered without it.
+`PLAN.md` scopes v1 to protocol *documents* — text. Nothing in the BASELINE vs
+MEM_RESET design requires execution, and that question can still be answered
+without it. Execution is off by default for exactly that reason: the pilot
+should run on the text-only design first, because the loop, the measures and the
+corpus are cheaper to debug without an isolation layer underneath them.
 
-So this is a **v2 capability**, and the sequencing matters: run the pilot on the text-only design first. It will show whether the loop, the measures and the corpus hold up, and that is cheaper to learn before adding an isolation layer. Building containment now would be solving a problem the current experiment does not have.
+What execution adds is the *other* half of the project's stated purpose — seeing
+what the agents actually program, rather than what they typed. With it enabled:
 
-What has changed today is the *other* half: the containment v1 actually needs — keeping model-supplied strings away from the filesystem — is no longer merely assumed. It is enforced and tested (`controller/world/paths.py`).
+- `correctness` is scored against what the code did, not how it reads
+- `executions.jsonl` records every run: entrypoint, exit code, output, duration,
+  which limit was hit
+- `scripts/watch_run.py` shows the program running, inline, while the run happens
+
+Turning it on is two settings, deliberately separate — `execution_enabled` adds
+the phase, `sandbox_backend=docker` selects a runtime that is not a refusal:
+
+```bash
+EXECUTION_ENABLED=true SANDBOX_BACKEND=docker \
+  python -m controller.main --run-id CODE_001 --condition BASELINE --cycles 20
+```
+
+## 8. Recovery — a container that will not die
+
+The controller kills the container on the outer deadline and reports whether the
+kill worked. When it did not, `ExecutionResult.limit_hit` is
+`container_may_still_be_running`, the `execution_health` monitor rule raises a
+CRITICAL anomaly, and `docker.py` logs at CRITICAL. The run continues, because
+stopping it would not stop the container.
+
+That state means a container is still holding CPU and a workspace mount. It has
+no network and cannot write anywhere that persists, so it is a resource problem
+rather than a containment failure — but it will not clean itself up.
+
+```bash
+# 1. Find it. Sandbox containers are always named genesis_genesis_ws_*
+docker ps --filter "name=genesis_" --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"
+
+# 2. Kill it. SIGKILL; there is nothing inside worth draining.
+docker kill $(docker ps -q --filter "name=genesis_")
+
+# 3. If `docker kill` hangs, the daemon is the problem, not the container.
+docker ps           # if this also hangs, restart the daemon:
+#   macOS:  killall Docker && open -a Docker
+#   Linux:  sudo systemctl restart docker
+
+# 4. Anything left behind. --rm should make this empty.
+docker ps -a --filter "name=genesis_" --format "{{.Names}}"
+docker rm -f $(docker ps -aq --filter "name=genesis_")   # if not
+
+# 5. Orphaned workspaces, if the controller was killed before its finally block.
+ls -d ${TMPDIR:-/tmp}/genesis_ws_* 2>/dev/null && rm -rf ${TMPDIR:-/tmp}/genesis_ws_*
+```
+
+Then decide about the run. The cycle itself is fine — the execution came back as
+a TIMEOUT and everything downstream continued — so the data is usable. What is
+worth checking before continuing is whether the daemon is healthy
+(`python scripts/verify_containment.py`), because if it is not, subsequent
+cycles will record SANDBOX_ERROR and their `correctness` scores will be measuring
+the host rather than the agents.
+
+**If a container ever appears that you cannot account for** — a name that is not
+`genesis_ws_*`, a published port, a mount you did not configure — treat it as a
+containment failure rather than a resource leak: stop the run, keep the logs,
+and do not restart with execution enabled until `verify_containment.py` passes
+and you know where it came from.

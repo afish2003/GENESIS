@@ -128,6 +128,7 @@ async def run(argv: list[str] | None = None) -> None:
         log=prepared.log,
         scenario_library=prepared.scenario_library,
         kb_manager=prepared.kb_manager,
+        sandbox=prepared.sandbox,
     )
 
     try:
@@ -137,6 +138,7 @@ async def run(argv: list[str] | None = None) -> None:
         console.print(f"\n[yellow]Run {config.run_id} interrupted.[/]")
     finally:
         await prepared.backend.close()
+        await prepared.sandbox.close()
 
 
 def main(argv: list[str] | None = None) -> None:

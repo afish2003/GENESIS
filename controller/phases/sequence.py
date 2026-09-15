@@ -28,6 +28,7 @@ from controller.phases import (
     doctrine_revision,
     ethical_log,
     evaluation,
+    execution,
     identity_revision,
     interpretation,
     load_state,
@@ -75,7 +76,17 @@ DEFAULT_SEQUENCE: tuple[Phase, ...] = (
     Phase("persist_state", persist_state.execute, needs_ctx=False),
 )
 
-ALL_PHASES: dict[str, Phase] = {p.name: p for p in DEFAULT_SEQUENCE}
+#: Phases that exist but are not in the default sequence. `execution` runs
+#: agent-authored code, so it is opt-in twice over: the researcher must set
+#: execution_enabled (or name it in phase_sequence) AND configure a sandbox that
+#: is not NullSandbox. See docs/containment_design.md.
+OPTIONAL_PHASES: tuple[Phase, ...] = (
+    Phase("execution", execution.execute, needs_ctx=False),
+)
+
+ALL_PHASES: dict[str, Phase] = {
+    p.name: p for p in (*DEFAULT_SEQUENCE, *OPTIONAL_PHASES)
+}
 
 #: Phases that must come after another, because they read what it writes
 #: through CycleState. Not exhaustive — these are the ones whose violation is
@@ -90,14 +101,35 @@ _ORDERING_RULES: tuple[tuple[str, str], ...] = (
     ("load_state", "persist_state"),
 )
 
+#: Pairs where order matters only when BOTH are present. Distinct from
+#: _ORDERING_RULES, which additionally makes the earlier phase mandatory —
+#: applying that here would make `evaluation` require `execution`, i.e. force
+#: every run to execute agent code.
+_RELATIVE_ORDER_RULES: tuple[tuple[str, str, str], ...] = (
+    ("protocol_design", "execution",
+     "there is no artifact to run yet"),
+    ("execution", "evaluation",
+     "the evaluator would score correctness without the execution result, "
+     "which is the reason to run the code at all"),
+)
+
 
 class SequenceError(ValueError):
     """A phase sequence that would silently misbehave."""
 
 
-def build_sequence(names: list[str] | None) -> tuple[Phase, ...]:
-    """Resolve phase names into a sequence, or return the default."""
+def build_sequence(
+    names: list[str] | None, *, execution_enabled: bool = False
+) -> tuple[Phase, ...]:
+    """Resolve phase names into a sequence, or return the default.
+
+    `execution_enabled` only affects the default. An explicit phase_sequence is
+    taken literally — if you list the phases yourself, you decide whether
+    `execution` is among them.
+    """
     if not names:
+        if execution_enabled:
+            return _with_execution(DEFAULT_SEQUENCE)
         return DEFAULT_SEQUENCE
     unknown = [n for n in names if n not in ALL_PHASES]
     if unknown:
@@ -126,6 +158,12 @@ def validate_sequence(sequence: tuple[Phase, ...]) -> None:
                 f"{after!r} is present but {before!r} is not; it has nothing to act on."
             )
 
+    for before, after, why in _RELATIVE_ORDER_RULES:
+        if before in order and after in order and order[before] > order[after]:
+            raise SequenceError(
+                f"{after!r} runs before {before!r}: {why}."
+            )
+
     if not any(p.builds_ctx for p in sequence) and any(p.needs_ctx for p in sequence):
         raise SequenceError(
             "Sequence has phases needing agent contexts but nothing that builds them "
@@ -138,3 +176,23 @@ def validate_sequence(sequence: tuple[Phase, ...]) -> None:
         )
     if order["persist_state"] != len(sequence) - 1:
         raise SequenceError("persist_state must be last; anything after it is not saved.")
+
+
+def _with_execution(sequence: tuple[Phase, ...]) -> tuple[Phase, ...]:
+    """Insert `execution` after protocol_design, so evaluation can read it.
+
+    Appending it instead would log the run and leave the evaluator scoring
+    `correctness` from the source alone — the exact gap this phase exists to
+    close.
+    """
+    phase = ALL_PHASES["execution"]
+    if any(p.name == "execution" for p in sequence):
+        return sequence
+    try:
+        at = [p.name for p in sequence].index("protocol_design") + 1
+    except ValueError:
+        raise SequenceError(
+            "execution_enabled is set but the sequence has no 'protocol_design' "
+            "phase, so there would be no artifact to run."
+        ) from None
+    return (*sequence[:at], phase, *sequence[at:])

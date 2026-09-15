@@ -18,6 +18,7 @@ from controller.monitor.rules import (
     doctrine_applied,
     doctrine_growth,
     evaluation_occurred,
+    execution_health,
     memory_advancing,
     phase_completion,
     phase_end_status,
@@ -231,3 +232,41 @@ class _FakeWorld:
         self.identities = {"axiom": IdentityStatement(agent_id="axiom", content="i")}
         self.memory = {"axiom": [], "flux": []}
         self.protocols = {}
+
+
+class TestExecutionHealth:
+    """"The code did not work" and "nothing ran" are the same low score."""
+
+    def ran(self, **payload):
+        base = {"outcome": "OK", "exit_code": 0, "detail": "", "limit_hit": ""}
+        base.update(payload)
+        return obs(events=[{"event_type": "CODE_EXECUTION", "payload": base}])
+
+    def test_quiet_when_the_code_simply_failed(self):
+        """A crash is a finding about the agents, not about the controller."""
+        assert execution_health(self.ran(outcome="NONZERO_EXIT", exit_code=1)) == []
+
+    def test_quiet_when_the_code_ran(self):
+        assert execution_health(self.ran()) == []
+
+    def test_quiet_when_the_program_hit_its_own_limits(self):
+        """A program that loops forever is data. Containment worked."""
+        assert execution_health(
+            self.ran(outcome="TIMEOUT", limit_hit="wall_clock_or_memory")
+        ) == []
+
+    @pytest.mark.parametrize("outcome", ["REFUSED", "SANDBOX_ERROR"])
+    def test_warns_when_nothing_actually_ran(self, outcome):
+        fired = execution_health(self.ran(outcome=outcome, detail="no runtime"))
+        assert len(fired) == 1
+        assert fired[0].severity is Severity.WARNING
+        assert "without running the code" in fired[0].detail
+
+    def test_critical_when_a_container_would_not_die(self):
+        fired = execution_health(self.ran(
+            outcome="TIMEOUT", limit_hit="container_may_still_be_running",
+        ))
+        assert [a.severity for a in fired] == [Severity.CRITICAL]
+
+    def test_ignores_cycles_with_no_execution(self):
+        assert execution_health(obs()) == []

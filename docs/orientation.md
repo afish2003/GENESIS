@@ -83,7 +83,7 @@ Cycle count, model name, Ollama host, both temperatures, retry limit, discussion
 | Prompt sources are per-named-agent | `agents/base.py` loads `<agent_id>_system.md` | A new roster entry needs two files written by hand |
 | Exactly two conditions | `Condition` enum | Composable fields would be better |
 | One model for all roles | single `model_name` | |
-| Code is never executed | `create_sandbox` has no caller outside tests | See `containment_design.md` |
+| One evaluator prompt per task | `tasks/*.py` | Fine; noted because it is the next thing to vary |
 
 **Read this correctly**: the rigidity is *shallow*. It is string literals and a fixed call sequence, not architectural commitment. The hard parts — the inference abstraction, per-phase Pydantic schemas, append-only logging, world-state diffing, checkpoint/resume — are all built and generic. Turning this into a platform is a refactor, not a rewrite.
 
@@ -150,12 +150,14 @@ asyncio.run(t())
 - *MEM_RESET never reset memory* until 2026-09-14: the reset ran before `load_state`, which reloaded the journals from disk. Every MEM_RESET arm collected before that date measured BASELINE with a degraded retrieval index.
 - *Retrieval was write-only* until 2026-09-14: results were logged and never entered any prompt. No agent had seen a retrieved document.
 - *Discussion was hardcoded to two agents*; a third was silent but still voted on doctrine.
+- *Code was never executed* until 2026-09-14: `create_sandbox` had no caller outside its own tests, so "see what they program" meant "see what they typed".
 
 **Containment** (see `containment_design.md`):
 
-- There is no OS-level sandbox, by design — `PLAN.md` §4 makes the boundary "architectural and logical". That is sound *only* while agents cannot execute anything, which is true today: the controller contains no `subprocess`/`exec`/`eval` and protocol documents are never run.
-- Model-supplied identifiers reaching the filesystem are now sanitised and asserted (`controller/world/paths.py`, `f69de9d`). Before that, `protocol_id` could write a file anywhere the controller's user could.
-- If agents are ever given code execution, real isolation is a hard prerequisite. `containment_design.md` specifies the architecture and a precondition checklist.
+- By default agents execute nothing, and the boundary is the one `PLAN.md` §4 describes: architectural and logical. Artifacts are text the controller parses into Pydantic models.
+- Model-supplied identifiers reaching the filesystem are sanitised and asserted (`controller/world/paths.py`, `f69de9d`). Before that, `protocol_id` could write a file anywhere the controller's user could.
+- With `execution_enabled` and `sandbox_backend=docker` the boundary becomes OS-level too: a throwaway container with no network, a read-only rootfs, a read-only workspace, non-root, all capabilities dropped, and memory/CPU/PID/wall-clock caps. Verified against real containers by `scripts/verify_containment.py` — run it on any host before enabling execution, and treat a *skip* as a failure.
+- The escape suite found a real hole on its first run: the workspace bind mount was writable and a bind mount has no size quota, so disk-fill — the likeliest accident in the threat model — was uncontained while every flag was correct. Argv tests cannot catch that class of thing.
 
 **Known fragilities** (from the April audit, still true):
 

@@ -36,6 +36,10 @@ class EventType(str, Enum):
     IDENTITY_REVISED = "IDENTITY_REVISED"
     ETHICAL_TENSION_LOGGED = "ETHICAL_TENSION_LOGGED"
     MEMORY_SUMMARY = "MEMORY_SUMMARY"
+    #: One run of agent-authored code inside the sandbox. Both an audit
+    #: trail and research data: what the agents chose to build, and what it
+    #: actually did when run.
+    CODE_EXECUTION = "CODE_EXECUTION"
 
     # Artifact tracking
     ARTIFACT_DIFF = "ARTIFACT_DIFF"
@@ -85,6 +89,9 @@ EVENT_FILE_ROUTING: dict[EventType, str] = {
     EventType.ARTIFACT_DIFF: "protocol_diffs.jsonl",
     # evaluations.jsonl
     EventType.EVALUATION_SCORE: "evaluations.jsonl",
+    # executions.jsonl — kept separate from evaluations because an execution
+    # is an observation of the artifact, not a judgement of it.
+    EventType.CODE_EXECUTION: "executions.jsonl",
     # scenario_events.jsonl
     EventType.SCENARIO_INJECTED: "scenario_events.jsonl",
     # notable_events.jsonl — everything else

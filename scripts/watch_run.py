@@ -188,20 +188,50 @@ class RunView:
             console.print(f"  [bold]{'reset':>8}[/]   memory wiped "
                           f"(entries now: {after}), "
                           f"{p.get('self_history_documents_cleared',0)} history docs cleared")
+        elif p.get("kind") == "sandbox_health":
+            ok = p.get("healthy")
+            console.print(f"  [bold]{'sandbox':>8}[/]   {p.get('backend','?')} "
+                          f"{'[green]ready[/]' if ok else '[red]UNAVAILABLE[/]'} "
+                          f"[dim]({p.get('image','?')}, {p.get('timeout_seconds','?')}s)[/]")
+        elif p.get("kind") == "execution_unavailable":
+            console.print(f"  [bold red]{'no run':>8}[/]   "
+                          f"{p.get('outcome','?')}: {p.get('detail','')}")
         elif p.get("kind") == "retrieval_empty":
             console.print(f"  [dim]{a or '?':>8} retrieved nothing "
                           f"({p.get('queries',0)} queries)[/]")
 
     def _on_code_execution(self, e, p, a):
-        """Present once execution is wired; harmless until then."""
-        ok = p.get("outcome") == "OK"
-        console.print(f"  [bold]{'ran':>8}[/]   exit {p.get('exit_code','?')} "
-                      f"in {p.get('duration_seconds',0):.1f}s "
-                      f"{'[green]ok[/]' if ok else '[red]' + str(p.get('outcome')) + '[/]'}")
-        for stream, style in (("stdout", "white"), ("stderr", "red")):
+        """The agents' program, running. The reason this script exists."""
+        outcome = p.get("outcome", "?")
+        style = {"OK": "green", "NONZERO_EXIT": "yellow"}.get(outcome, "red")
+        exit_code = p.get("exit_code")
+        bits = [f"[{style}]{outcome.lower()}[/]"]
+        if exit_code is not None:
+            bits.append(f"exit {exit_code}")
+        bits.append(f"{p.get('duration_seconds', 0.0):.1f}s")
+        if p.get("limit_hit"):
+            bits.append(f"[red]{p['limit_hit']}[/]")
+        console.print(
+            f"  [bold]{'ran':>8}[/]   [dim]{p.get('entrypoint', '?')}[/]  "
+            + "  ".join(bits)
+        )
+        if p.get("detail"):
+            console.print(f"  {'':>8}   [dim]{p['detail']}[/]")
+
+        # The output itself, indented under the run. Clipped like agent text
+        # unless --full: a program printing a thousand lines should not bury
+        # the discussion it came out of.
+        for stream, out_style in (("stdout", "white"), ("stderr", "red")):
             text = (p.get(stream) or "").rstrip()
-            for line in text.splitlines()[: (None if self.full else 10)]:
-                console.print(f"  {'':>8}   [{style}]{line}[/]")
+            if not text:
+                continue
+            all_lines = text.splitlines()
+            shown = all_lines if self.full else all_lines[:10]
+            for line in shown:
+                console.print(f"  {'':>8}   [{out_style}]{line[:200]}[/]")
+            if len(all_lines) > len(shown):
+                console.print(f"  {'':>8}   [dim]... {len(all_lines) - len(shown)} "
+                              f"more line(s) — rerun with --full[/]")
 
 
 def iter_events(run_dir: Path, follow: bool, poll: float = 0.5):

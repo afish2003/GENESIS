@@ -1,6 +1,7 @@
 # The agents build code instead of prose protocol documents.
-# Artifacts are stored and reviewed, never executed — execution requires
-# ExecutionSandbox, which refuses by default.
+# Artifacts are stored and reviewed, never executed: execution is opt-in and
+# NullSandbox refuses by default. For the version that actually runs the
+# code, see code_execution.yaml.
 task: code
 framing: disclosed
 identity_seed: prescribed
