@@ -75,6 +75,9 @@ class OpenAICompatBackend(InferenceBackend):
         self.model = model
         self.api_key = api_key or None
         self.json_mode = json_mode
+        #: Cleared permanently the first time the endpoint rejects
+        #: response_format, so one 400 costs one extra request, not one per call.
+        self._json_mode_supported = True
 
         headers = {"Content-Type": "application/json"}
         if self.api_key:
@@ -91,6 +94,7 @@ class OpenAICompatBackend(InferenceBackend):
         self,
         messages: list[Message],
         temperature: float = 0.7,
+        force_json: bool = False,
     ) -> InferenceResult:
         """Send a chat completion to {base_url}/chat/completions."""
         payload: dict = {
@@ -99,10 +103,31 @@ class OpenAICompatBackend(InferenceBackend):
             "temperature": temperature,
             "stream": False,
         }
-        if self.json_mode:
+        # force_json is set by complete_structured on a retry, after the
+        # unconstrained attempt produced something unparseable.
+        want_json = (self.json_mode or force_json) and self._json_mode_supported
+        if want_json:
             payload["response_format"] = {"type": "json_object"}
 
-        response = await self._request_with_retry(payload)
+        try:
+            response = await self._request_with_retry(payload)
+        except httpx.HTTPStatusError as e:
+            # `response_format` is widely but not universally supported, and it
+            # is now on by default because it is what makes small models emit
+            # parseable JSON at all. An endpoint that rejects it must degrade to
+            # unconstrained decoding rather than failing the run — the results
+            # are worse, not absent, and the warning says which.
+            if not (want_json and self._is_response_format_rejection(e)):
+                raise
+            self._json_mode_supported = False
+            logger.warning(
+                "%s rejected response_format={'type':'json_object'}; continuing "
+                "without it for the rest of this run. Structured phases will "
+                "rely on the parse retries instead, which is measurably worse "
+                "for small models.", self.base_url,
+            )
+            payload.pop("response_format", None)
+            response = await self._request_with_retry(payload)
         data = response.json()
 
         choices = data.get("choices") or []
@@ -121,6 +146,20 @@ class OpenAICompatBackend(InferenceBackend):
             prompt_tokens=usage.get("prompt_tokens"),
             completion_tokens=usage.get("completion_tokens"),
         )
+
+    @staticmethod
+    def _is_response_format_rejection(error: "httpx.HTTPStatusError") -> bool:
+        """Whether a 4xx is about response_format rather than anything else.
+
+        Checked by message, because the OpenAI-compatible ecosystem has no
+        shared error code for an unsupported parameter. Narrow on purpose: a
+        400 for a bad model name must not be mistaken for this and silently
+        turn JSON mode off.
+        """
+        if error.response.status_code not in (400, 404, 422, 501):
+            return False
+        body = (error.response.text or "").lower()
+        return "response_format" in body or "json_object" in body
 
     async def _request_with_retry(self, payload: dict) -> httpx.Response:
         """POST with exponential backoff on connection errors, 5xx, and 429."""

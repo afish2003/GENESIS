@@ -342,9 +342,9 @@ class TestRetrievalReachesAgents:
         seen: list[str] = []
         original = prepared.backend.complete
 
-        async def recording(messages, temperature=0.7):
+        async def recording(messages, temperature=0.7, **kw):
             seen.extend(m.content for m in messages)
-            return await original(messages, temperature=temperature)
+            return await original(messages, temperature=temperature, **kw)
 
         prepared.backend.complete = recording  # type: ignore[method-assign]
 
@@ -452,7 +452,7 @@ class TestPhaseFailureIsVisible:
         # been appended, so the phase dies holding events it produced.
         vote_marker = "has proposed a doctrine revision"
 
-        async def failing(messages, temperature=0.7):
+        async def failing(messages, temperature=0.7, **kw):
             if any(vote_marker in m.content for m in messages):
                 raise RuntimeError("deliberate mid-phase failure")
             return await original(messages, temperature=temperature)
