@@ -104,9 +104,20 @@ class CycleOrchestrator:
         })
 
         for cycle_id in range(start_cycle, self.config.total_cycles):
-            await self.run_cycle(cycle_id)
+            failed = await self.run_cycle(cycle_id)
 
-            # Checkpoint after each cycle
+            # Checkpoint only a cycle that actually persisted. Writing one
+            # regardless meant a crash inside persist_state — writes are
+            # non-atomic write_text calls — left a checkpoint claiming the cycle
+            # was complete, with a hash of in-memory state that never reached
+            # disk. Resume then continued against a torn world and said nothing.
+            if "persist_state" in failed:
+                logger.error(
+                    "Cycle %d did not persist; not checkpointing. Resume will "
+                    "re-run this cycle.", cycle_id,
+                )
+                continue
+
             world_hash = self.world.compute_hash()
             write_checkpoint(
                 self.config.run_log_dir,
@@ -125,7 +136,7 @@ class CycleOrchestrator:
             "completed_cycles": self.config.total_cycles,
         })
 
-    async def run_cycle(self, cycle_id: int) -> None:
+    async def run_cycle(self, cycle_id: int) -> list[str]:
         """Execute a single cycle (all 14 phases)."""
         cycle_started = time.monotonic()
         self._cycle_events = []
@@ -161,7 +172,9 @@ class CycleOrchestrator:
             if phase.builds_ctx:
                 contexts = self._build_contexts()
 
-        self._log_event(EventType.CYCLE_END, cycle_id)
+        self._log_event(EventType.CYCLE_END, cycle_id, payload={
+            "failed_phases": list(cycle.failed_phases),
+        })
 
         # Watchdog runs last, after state is persisted, so it observes the
         # cycle exactly as the logs record it.
@@ -180,6 +193,8 @@ class CycleOrchestrator:
                     f"Cycle {cycle_id}: watchdog reported a CRITICAL anomaly and "
                     f"halt_on_critical_anomaly is set. See anomalies.jsonl."
                 )
+
+        return list(cycle.failed_phases)
 
     async def _run_phase(
         self,

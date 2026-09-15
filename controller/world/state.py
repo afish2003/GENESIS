@@ -30,6 +30,18 @@ from controller.world.paths import assert_within, safe_artifact_id
 logger = logging.getLogger(__name__)
 
 
+#: Version and last_modified_cycle live beside the documents rather than inside
+#: them: the .md files are what the agents read, and a metadata header would
+#: become part of the doctrine text. Without this the counters were incremented
+#: every revision and reset to 1 on the next load, so version tracking did not
+#: survive a resume and "how much did doctrine evolve" was unanswerable.
+_METADATA_FILE = ".metadata.json"
+
+
+class WorldNotLoadedError(RuntimeError):
+    """save() was called on a world whose load() did not complete."""
+
+
 class WorldState:
     """Manages all persistent world artifacts.
 
@@ -65,18 +77,43 @@ class WorldState:
         self.ethical_log: list[EthicalLogEntry] = []
         self.relationship_log: list[RelationshipLogEntry] = []
 
+        #: True once load() has completed without raising. save() refuses while
+        #: this is False: a partially-loaded world written back to disk destroys
+        #: whatever it failed to read. One corrupt protocol JSON used to be
+        #: enough to blank ethical_tradeoff_log.jsonl, because _load_protocols
+        #: raised before _load_ethical_log ran and the empty in-memory list was
+        #: then saved over the real file.
+        self.loaded: bool = False
+
     def load(self) -> None:
-        """Load all artifacts from the world directory."""
+        """Load all artifacts from the world directory.
+
+        `loaded` flips only if every loader succeeded; a raise leaves it False
+        and save() will refuse.
+        """
+        self.loaded = False
         self._load_doctrine()
         self._load_identities()
         self._load_memory()
         self._load_protocols()
         self._load_ethical_log()
         self._load_relationship_log()
+        self.loaded = True
         logger.info("World state loaded from %s", self.world_dir)
 
     def save(self, run_id: str, condition: str, cycle_id: int) -> list[EventEnvelope]:
-        """Save all artifacts and return diff events for any changes."""
+        """Save all artifacts and return diff events for any changes.
+
+        Raises WorldNotLoadedError if the last load() did not complete. Writing
+        a partially-loaded world back is unrecoverable: the artifacts that
+        failed to load are empty in memory and would overwrite the real files.
+        """
+        if not self.loaded:
+            raise WorldNotLoadedError(
+                f"Refusing to save cycle {cycle_id}: the world was never "
+                f"successfully loaded, so saving would overwrite artifacts that "
+                f"failed to read with empty in-memory state."
+            )
         events: list[EventEnvelope] = []
         events.extend(self._save_doctrine(run_id, condition, cycle_id))
         events.extend(self._save_identities(run_id, condition, cycle_id))
@@ -84,36 +121,110 @@ class WorldState:
         events.extend(self._save_protocols(run_id, condition, cycle_id))
         self._save_ethical_log()
         self._save_relationship_log()
+        self._write_metadata()
         logger.info("World state saved to %s (%d diff events)", self.world_dir, len(events))
         return events
 
     def compute_hash(self) -> str:
-        """Compute a hash of the current world state for checkpointing."""
+        """A hash of the complete world state, for checkpoint verification.
+
+        Every field that a cycle can change must be covered, or resume will
+        accept a materially different world. The previous version hashed only
+        doctrine/identity content, memory summaries and protocol bodies —
+        omitting both logs, all version and last_modified_cycle fields,
+        evaluation_history and archived flags. A cycle that only logged an
+        ethical tension produced an identical hash to the one before it.
+
+        Fields are separated by a NUL byte; concatenating them directly made
+        ("ab","c") and ("a","bc") collide.
+        """
         hasher = hashlib.sha256()
+
+        def feed(*parts: object) -> None:
+            for part in parts:
+                hasher.update(str(part).encode("utf-8"))
+                hasher.update(b"\x00")
+
         for name in sorted(self.doctrine):
-            hasher.update(self.doctrine[name].content.encode())
+            doc = self.doctrine[name]
+            feed("doctrine", name, doc.content, doc.version, doc.last_modified_cycle)
+
         for agent_id in sorted(self.identities):
-            hasher.update(self.identities[agent_id].content.encode())
+            ident = self.identities[agent_id]
+            feed("identity", agent_id, ident.content, ident.version,
+                 ident.last_modified_cycle)
+
         for agent_id in sorted(self.memory):
+            feed("memory", agent_id)
             for entry in self.memory[agent_id]:
-                hasher.update(entry.summary.encode())
+                feed(entry.cycle_id, entry.summary, entry.key_events,
+                     entry.relationship_note, entry.doctrine_changes)
+
         for pid in sorted(self.protocols):
-            hasher.update(self.protocols[pid].content.encode())
+            proto = self.protocols[pid]
+            feed("protocol", pid, proto.title, proto.content, proto.version,
+                 proto.last_modified_cycle, proto.archived,
+                 len(proto.evaluation_history))
+
+        for entry in self.ethical_log:
+            feed("ethical", entry.cycle_id, entry.agent_id, entry.description,
+                 entry.severity, entry.resolution)
+
+        for entry in self.relationship_log:
+            feed("relationship", entry.cycle_id, entry.agent_id, entry.note)
+
         return hasher.hexdigest()[:16]
 
     # ------------------------------------------------------------------
     # Doctrine
     # ------------------------------------------------------------------
 
+    def _read_metadata(self) -> dict:
+        path = self.world_dir / "doctrine" / _METADATA_FILE
+        if not path.exists():
+            return {}
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            logger.warning("Doctrine metadata at %s is unreadable; version "
+                           "counters restart from 1", path)
+            return {}
+
+    def _write_metadata(self) -> None:
+        doctrine_dir = self.world_dir / "doctrine"
+        doctrine_dir.mkdir(parents=True, exist_ok=True)
+        meta = {
+            name: {"version": doc.version,
+                   "last_modified_cycle": doc.last_modified_cycle}
+            for name, doc in self.doctrine.items()
+        }
+        meta.update({
+            f"identity_{agent_id}.md": {
+                "version": ident.version,
+                "last_modified_cycle": ident.last_modified_cycle,
+            }
+            for agent_id, ident in self.identities.items()
+        })
+        (doctrine_dir / _METADATA_FILE).write_text(
+            json.dumps(meta, indent=2), encoding="utf-8"
+        )
+
     def _load_doctrine(self) -> None:
         doctrine_dir = self.world_dir / "doctrine"
         if not doctrine_dir.exists():
             return
-        for filepath in doctrine_dir.iterdir():
+        meta = self._read_metadata()
+        # Rebuild rather than update: a document deleted from the world
+        # directory used to survive in memory and be rewritten on the next save.
+        self.doctrine = {}
+        for filepath in sorted(doctrine_dir.iterdir()):
             if filepath.suffix == ".md" and not filepath.name.startswith("identity_"):
+                entry = meta.get(filepath.name, {})
                 self.doctrine[filepath.name] = DoctrineDocument(
                     filename=filepath.name,
                     content=filepath.read_text(encoding="utf-8"),
+                    version=entry.get("version", 1),
+                    last_modified_cycle=entry.get("last_modified_cycle", 0),
                 )
 
     def _save_doctrine(self, run_id: str, condition: str, cycle_id: int) -> list[EventEnvelope]:
@@ -144,12 +255,17 @@ class WorldState:
         doctrine_dir = self.world_dir / "doctrine"
         if not doctrine_dir.exists():
             return
+        meta = self._read_metadata()
+        self.identities = {}
         for agent_id in self.agents:
             filepath = doctrine_dir / f"identity_{agent_id}.md"
             if filepath.exists():
+                entry = meta.get(filepath.name, {})
                 self.identities[agent_id] = IdentityStatement(
                     agent_id=agent_id,
                     content=filepath.read_text(encoding="utf-8"),
+                    version=entry.get("version", 1),
+                    last_modified_cycle=entry.get("last_modified_cycle", 0),
                 )
 
     def _save_identities(self, run_id: str, condition: str, cycle_id: int) -> list[EventEnvelope]:

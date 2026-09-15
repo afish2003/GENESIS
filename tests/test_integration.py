@@ -475,3 +475,116 @@ class TestPhaseFailureIsVisible:
             f"a phase failed part-way and every event it had produced was lost "
             f"(partial_events_kept={kept})"
         )
+
+
+# ---------------------------------------------------------------------------
+# Data-loss guards
+# ---------------------------------------------------------------------------
+
+class TestWorldSaveGuard:
+    """save() must refuse a world whose load() did not complete.
+
+    One corrupt protocol JSON used to be enough to blank the ethical and
+    relationship logs: _load_protocols raised, load_state was swallowed, the
+    empty in-memory lists were then written over the real files.
+    """
+
+    def test_save_refuses_an_unloaded_world(self, tmp_path):
+        from controller.world.state import WorldNotLoadedError, WorldState
+
+        world = WorldState(tmp_path / "world")
+        with pytest.raises(WorldNotLoadedError):
+            world.save("R", "BASELINE", 0)
+
+    def test_corrupt_protocol_does_not_truncate_the_logs(self, tmp_path):
+        """The original data-loss path, end to end."""
+        config = make_config(tmp_path, total_cycles=1)
+        run_cycles(config)
+
+        logs = config.world_dir / "logs" / "ethical_tradeoff_log.jsonl"
+        before = logs.read_text()
+        assert before.strip(), "fixture produced no ethical log to lose"
+
+        protocols = config.world_dir / "sandbox" / "protocols"
+        protocols.mkdir(parents=True, exist_ok=True)
+        (protocols / "corrupt.json").write_text("{ this is not valid json")
+
+        from controller.world.state import WorldState
+
+        world = WorldState(config.world_dir, agents=config.agents)
+        with pytest.raises(Exception):
+            world.load()
+        assert world.loaded is False
+        with pytest.raises(Exception):
+            world.save("R", "BASELINE", 1)
+
+        assert logs.read_text() == before, "a corrupt protocol truncated the ethical log"
+
+
+class TestCheckpointIntegrity:
+    def test_hash_covers_the_ethical_log(self, tmp_path):
+        """A cycle that only logged a tension used to produce an identical hash."""
+        from controller.world.artifacts import EthicalLogEntry
+        from controller.world.state import WorldState
+
+        config = make_config(tmp_path, total_cycles=1)
+        prepare_run(config, load_embeddings=False)
+        world = WorldState(config.world_dir, agents=config.agents)
+        world.load()
+
+        before = world.compute_hash()
+        world.ethical_log.append(EthicalLogEntry(
+            cycle_id=1, agent_id="axiom", description="a tension", severity="low"
+        ))
+        assert world.compute_hash() != before
+
+    def test_hash_covers_version_fields(self, tmp_path):
+        from controller.world.state import WorldState
+
+        config = make_config(tmp_path, total_cycles=1)
+        prepare_run(config, load_embeddings=False)
+        world = WorldState(config.world_dir, agents=config.agents)
+        world.load()
+
+        before = world.compute_hash()
+        next(iter(world.doctrine.values())).version += 1
+        assert world.compute_hash() != before
+
+    def test_hash_has_no_boundary_collisions(self, tmp_path):
+        """("ab","c") and ("a","bc") collided when fields were concatenated."""
+        from controller.world.artifacts import EthicalLogEntry
+        from controller.world.state import WorldState
+
+        def hash_with(desc, resolution):
+            w = WorldState(tmp_path / "w")
+            w.loaded = True
+            w.ethical_log = [EthicalLogEntry(
+                cycle_id=0, agent_id="a", description=desc,
+                severity="low", resolution=resolution,
+            )]
+            return w.compute_hash()
+
+        assert hash_with("ab", "c") != hash_with("a", "bc")
+
+    def test_resume_refuses_a_torn_world(self, tmp_path):
+        """Writes are non-atomic; a crash mid-save leaves a world the
+        checkpoint does not describe. Resume used to accept it silently."""
+        from controller.run import CheckpointMismatchError
+
+        config = make_config(tmp_path, total_cycles=1)
+        run_cycles(config)
+
+        # Simulate a torn write: the world moved on after the checkpoint.
+        doctrine = config.world_dir / "doctrine" / "doctrine.md"
+        doctrine.write_text(doctrine.read_text() + "\n\nDivergent content.\n")
+
+        resumed = make_config(tmp_path, total_cycles=3)
+        with pytest.raises(CheckpointMismatchError, match="does not match the checkpoint"):
+            prepare_run(resumed, resume=True, load_embeddings=False)
+
+    def test_resume_accepts_an_intact_world(self, tmp_path):
+        config = make_config(tmp_path, total_cycles=1)
+        run_cycles(config)
+        resumed = make_config(tmp_path, total_cycles=3)
+        prepared = prepare_run(resumed, resume=True, load_embeddings=False)
+        assert prepared.start_cycle == 1

@@ -84,6 +84,10 @@ _ORDERING_RULES: tuple[tuple[str, str], ...] = (
     ("scenario_check", "scenario_inject"),   # sets cycle.scenario_active
     ("protocol_design", "evaluation"),       # sets cycle.proposed_protocol
     ("evaluation", "interpretation"),        # sets cycle.evaluation_result
+    # Not a CycleState dependency but a destructive one: persist_state writes
+    # every artifact from memory, so running it without load_state truncates
+    # the journals and both logs on the first cycle.
+    ("load_state", "persist_state"),
 )
 
 

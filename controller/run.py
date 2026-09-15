@@ -53,6 +53,37 @@ def _provide(override: Optional[Path], dest: Path, render) -> Path:
     return dest
 
 
+class CheckpointMismatchError(RuntimeError):
+    """The world on disk is not the world the checkpoint was written for."""
+
+
+def _verify_checkpoint(world: WorldState, checkpoint: dict) -> None:
+    """Refuse to resume onto a world that does not match the checkpoint.
+
+    Artifact writes are non-atomic, so a crash mid-save leaves a torn world
+    directory. The checkpoint hash was previously recorded and never compared,
+    so a resume continued against it silently.
+    """
+    expected = checkpoint.get("world_state_hash")
+    if not expected:
+        logger.warning("Checkpoint carries no world hash; cannot verify the world")
+        return
+
+    world.load()
+    actual = world.compute_hash()
+    if actual != expected:
+        raise CheckpointMismatchError(
+            f"Refusing to resume: the world directory does not match the "
+            f"checkpoint for cycle {checkpoint.get('last_completed_cycle')}.\n"
+            f"  checkpoint hash: {expected}\n"
+            f"  world on disk:   {actual}\n"
+            f"The last cycle probably crashed part-way through persisting. "
+            f"Restore {world.world_dir} from the run's world_archive, or start "
+            f"a fresh run."
+        )
+    logger.info("Checkpoint verified against the world on disk (%s)", actual)
+
+
 @dataclass
 class PreparedRun:
     config: RunConfig
@@ -95,6 +126,7 @@ def prepare_run(
              lambda dest: materialise_world_template(config, dest))
 
     start_cycle = 0
+    checkpoint = None
     if resume:
         checkpoint = load_checkpoint(config.run_log_dir)
         if checkpoint:
@@ -107,6 +139,9 @@ def prepare_run(
         initialize_world(config.run_world_template_dir, config.world_dir)
 
     world = WorldState(config.world_dir, agents=config.agents)
+
+    if checkpoint and start_cycle > 0:
+        _verify_checkpoint(world, checkpoint)
 
     kb_manager = KnowledgeBaseManager(
         kb_dir=config.knowledge_bases_dir,

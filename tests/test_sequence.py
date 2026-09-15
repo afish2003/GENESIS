@@ -98,9 +98,20 @@ class TestSilentFailureGuards:
         with pytest.raises(SequenceError, match="must be last"):
             build_sequence(["load_state", "persist_state", "reflection"])
 
-    def test_missing_context_builder_rejected(self):
-        with pytest.raises(SequenceError, match="builds them"):
+    def test_missing_load_state_rejected(self):
+        """load_state is both the context builder and persist_state's producer.
+
+        Without it, persist_state writes every artifact from empty in-memory
+        state — truncating the journals and both logs. The load_state ordering
+        rule catches this before the context-builder check, which remains as
+        defence in depth for any future builds_ctx phase.
+        """
+        with pytest.raises(SequenceError, match="load_state"):
             validate_sequence(tuple(ALL_PHASES[n] for n in ["reflection", "persist_state"]))
+
+    def test_persist_before_load_rejected(self):
+        with pytest.raises(SequenceError, match="load_state"):
+            build_sequence(["persist_state", "load_state"])
 
 
 class TestConfigIntegration:
