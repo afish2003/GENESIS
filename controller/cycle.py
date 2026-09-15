@@ -37,6 +37,7 @@ from controller.phases import (
 from controller.retrieval.databases import KnowledgeBaseManager
 from controller.world.artifacts import ScenarioEvent
 from controller.monitor.watchdog import Watchdog
+from controller.phases.sequence import build_sequence
 from controller.world.reset import write_checkpoint
 from controller.world.state import WorldState
 
@@ -79,6 +80,7 @@ class CycleOrchestrator:
         # Deterministic monitoring. Observes controller-side state only and
         # never contributes to AgentContext, so the agents cannot perceive it.
         self.watchdog = Watchdog(config) if config.watchdog_enabled else None
+        self.sequence = build_sequence(config.phase_sequence)
         # Everything logged during the current cycle, so the watchdog can
         # observe the cycle exactly as the logs record it.
         self._cycle_events: list[EventEnvelope] = []
@@ -145,65 +147,17 @@ class CycleOrchestrator:
                 "self_history_documents_cleared": removed,
             })
 
-        # Phase 1: Load state
-        await self._run_phase("load_state", cycle_id, cycle,
-                              load_state.execute)
-
-        # Build agent contexts for this cycle
-        contexts = self._build_contexts()
-
-        # Phase 2: Individual reflection
-        await self._run_phase("reflection", cycle_id, cycle,
-                              reflection.execute, contexts)
-
-        # Phase 3: Scenario check
-        await self._run_phase("scenario_check", cycle_id, cycle,
-                              scenario_check.execute, contexts)
-
-        # Phase 4: Scenario inject (conditional)
-        if cycle.scenario_active:
-            await self._run_phase("scenario_inject", cycle_id, cycle,
-                                  scenario_inject.execute, contexts)
-
-        # Phase 5: Joint discussion
-        await self._run_phase("discussion", cycle_id, cycle,
-                              discussion.execute, contexts)
-
-        # Phase 6: Retrieval
-        await self._run_phase("retrieval", cycle_id, cycle,
-                              retrieval.execute, contexts)
-
-        # Phase 7: Protocol design
-        await self._run_phase("protocol_design", cycle_id, cycle,
-                              protocol_design.execute, contexts)
-
-        # Phase 8: Evaluation
-        await self._run_phase("evaluation", cycle_id, cycle,
-                              evaluation.execute, contexts)
-
-        # Phase 9: Interpretation
-        await self._run_phase("interpretation", cycle_id, cycle,
-                              interpretation.execute, contexts)
-
-        # Phase 10: Doctrine revision
-        await self._run_phase("doctrine_revision", cycle_id, cycle,
-                              doctrine_revision.execute, contexts)
-
-        # Phase 11: Identity revision
-        await self._run_phase("identity_revision", cycle_id, cycle,
-                              identity_revision.execute, contexts)
-
-        # Phase 12: Ethical log update
-        await self._run_phase("ethical_log", cycle_id, cycle,
-                              ethical_log.execute, contexts)
-
-        # Phase 13: Memory summarization
-        await self._run_phase("memory_summarize", cycle_id, cycle,
-                              memory_summarize.execute, contexts)
-
-        # Phase 14: Persist state
-        await self._run_phase("persist_state", cycle_id, cycle,
-                              persist_state.execute)
+        # Walk the sequence. Order is data — see controller/phases/sequence.py.
+        contexts: dict[str, AgentContext] = {}
+        for phase in self.sequence:
+            if not phase.should_run(cycle):
+                continue
+            await self._run_phase(
+                phase.name, cycle_id, cycle, phase.fn,
+                contexts if phase.needs_ctx else None,
+            )
+            if phase.builds_ctx:
+                contexts = self._build_contexts()
 
         self._log_event(EventType.CYCLE_END, cycle_id)
 

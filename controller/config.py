@@ -200,6 +200,11 @@ class RunConfig(BaseModel):
     )
 
     # Cycle structure experiments
+    phase_sequence: Optional[list[str]] = Field(
+        default=None,
+        description="Ordered phase names. None uses the 14-phase v1 sequence. "
+                    "Validated against known inter-phase dependencies.",
+    )
     independent_proposals: bool = Field(
         default=False,
         description="Draft doctrine proposals without the shared discussion "
