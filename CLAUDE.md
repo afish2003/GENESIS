@@ -35,6 +35,10 @@ python -m controller.main --run-id SMOKE_001 --condition BASELINE --cycles 3
 python scripts/fetch_corpus.py --kb all --pilot
 python scripts/build_kb.py --source raw_corpus/general --output knowledge_bases/general --kb-name general
 
+# Watch a run as it happens (works live or on a finished run)
+python scripts/watch_run.py --run-id RUN_001
+python scripts/watch_run.py --run-id RUN_001 --replay --full
+
 # Compare experimental arms
 python scripts/compare_arms.py --runs RUN_A RUN_B --labels a b
 ```
