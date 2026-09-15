@@ -129,24 +129,6 @@ class CycleOrchestrator:
             kb_manager=self.kb_manager,
         )
 
-        # Handle memory reset for MEM_RESET condition
-        if self.config.should_reset_memory(cycle_id):
-            logger.info("Memory reset at cycle %d", cycle_id)
-            for agent_id in self.config.agents:
-                self.world.reset_memory(
-                    agent_id, cycle_id, self.config.memory_reset_bootstrap
-                )
-            # Self-history must go too. Wiping the memory journal while leaving
-            # the full past retrievable would not remove memory, only change how
-            # it is reached — which would confound the contrast against BASELINE
-            # that PLAN.md section 11 exists to measure.
-            removed = self.kb_manager.clear_self_history() if self.kb_manager else 0
-            self._log_event(EventType.NOTABLE_EVENT, cycle_id, payload={
-                "kind": "memory_reset",
-                "agents": list(self.config.agents),
-                "self_history_documents_cleared": removed,
-            })
-
         # Walk the sequence. Order is data — see controller/phases/sequence.py.
         contexts: dict[str, AgentContext] = {}
         for phase in self.sequence:
@@ -156,6 +138,17 @@ class CycleOrchestrator:
                 phase.name, cycle_id, cycle, phase.fn,
                 contexts if phase.needs_ctx else None,
             )
+            if phase.name == "load_state":
+                # The reset MUST happen after load_state, not before it.
+                # reset_memory() mutates world.memory in place; load_state then
+                # calls world.load(), whose _load_memory does
+                # `self.memory[agent] = entries` straight from disk — silently
+                # undoing the reset. persist_state wrote the full journals back,
+                # so MEM_RESET never reset anything while still logging that it
+                # had. Meanwhile clear_self_history() did fire, making the
+                # condition the exact inverse of its design.
+                self._apply_memory_reset(cycle_id)
+
             if phase.builds_ctx:
                 contexts = self._build_contexts()
 
@@ -222,6 +215,33 @@ class CycleOrchestrator:
             })
 
         self._log_event(EventType.PHASE_END, cycle_id, payload={"phase": phase_name})
+
+    def _apply_memory_reset(self, cycle_id: int) -> None:
+        """Wipe memory journals and self-history for the MEM_RESET condition.
+
+        Runs immediately after load_state so the reset is what subsequent
+        phases see and what persist_state writes back.
+        """
+        if not self.config.should_reset_memory(cycle_id):
+            return
+
+        logger.info("Memory reset at cycle %d", cycle_id)
+        for agent_id in self.config.agents:
+            self.world.reset_memory(
+                agent_id, cycle_id, self.config.memory_reset_bootstrap
+            )
+        # Self-history goes too. Wiping the journal while leaving the full past
+        # retrievable would not remove memory, only change how it is reached —
+        # confounding the contrast PLAN.md section 11 exists to measure.
+        removed = self.kb_manager.clear_self_history() if self.kb_manager else 0
+        self._log_event(EventType.NOTABLE_EVENT, cycle_id, payload={
+            "kind": "memory_reset",
+            "agents": list(self.config.agents),
+            "entries_after_reset": {
+                a: len(self.world.memory.get(a, [])) for a in self.config.agents
+            },
+            "self_history_documents_cleared": removed,
+        })
 
     def _build_contexts(self) -> dict[str, AgentContext]:
         """Build fresh agent contexts from current world state."""

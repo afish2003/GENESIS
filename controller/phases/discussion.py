@@ -44,10 +44,11 @@ async def execute(
     contexts: dict[str, AgentContext],
     logger: AppendOnlyJSONLLogger,
 ) -> list[EventEnvelope]:
-    """Run alternating discussion between Axiom and Flux."""
+    """Run a round-robin discussion across the roster."""
     events = []
     turns_per_agent = config.discussion_turns(cycle.scenario_active)
-    total_turns = turns_per_agent * 2  # Total turns in the discussion
+    agents = list(config.agents)
+    total_turns = turns_per_agent * len(agents)
 
     scenario_note = ""
     if cycle.scenario_active and cycle.current_scenario:
@@ -56,15 +57,18 @@ async def execute(
             "Consider its implications in your discussion."
         )
 
-    # Alternating turns: Axiom, Flux, Axiom, Flux, ...
-    agents = list(config.agents)
+    # Round-robin over the roster. This was agents[turn_idx % 2], which left a
+    # third agent silent for the whole cycle — never speaking, never receiving
+    # anyone else's turns — while still voting on doctrine and writing a memory
+    # summary from "(No discussion this cycle)". A single-agent roster raised
+    # IndexError on the first turn.
     partner_names = {a: config.partner_names(a) for a in agents}
-    last_message: dict[str, str] = {}  # agent_id -> their last message
+    last_speaker: str | None = None
+    last_message_text = ""
 
     for turn_idx in range(total_turns):
-        agent_id = agents[turn_idx % 2]
-        partner_id = agents[(turn_idx + 1) % 2]
-        agent_turn_number = (turn_idx // 2) + 1
+        agent_id = agents[turn_idx % len(agents)]
+        agent_turn_number = (turn_idx // len(agents)) + 1
         ctx = contexts[agent_id]
 
         # Build messages
@@ -84,15 +88,16 @@ async def execute(
             # Include discussion history
             for msg in ctx.get_discussion_messages():
                 messages.append(msg)
-            # Add partner's last message as the prompt
-            partner_msg = last_message.get(partner_id, "")
+            # The previous speaker's message is already in the history above;
+            # name them so the prompt reads naturally.
             messages.append(Message(
                 role="user",
                 content=DISCUSSION_CONTINUE_PROMPT.format(
                     turn_number=agent_turn_number,
                     total_turns=turns_per_agent,
-                    partner_name=partner_names[agent_id],
-                    partner_message=partner_msg,
+                    partner_name=(config.display_name(last_speaker)
+                                  if last_speaker else partner_names[agent_id]),
+                    partner_message=last_message_text,
                 ),
             ))
 
@@ -105,10 +110,12 @@ async def execute(
         output.agent_id = agent_id
         output.turn_number = turn_idx + 1
 
-        # Record in both agents' contexts
+        # Every other agent hears it, not just one partner.
         ctx.add_discussion_turn("assistant", output.message_text)
-        contexts[partner_id].add_discussion_turn("user", output.message_text)
-        last_message[agent_id] = output.message_text
+        for listener in config.partners(agent_id):
+            contexts[listener].add_discussion_turn("user", output.message_text)
+        last_speaker = agent_id
+        last_message_text = output.message_text
 
         events.append(EventEnvelope(
             event_type=EventType.DISCUSSION_TURN,

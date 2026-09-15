@@ -40,6 +40,11 @@ class AgentContext:
         self.doctrine_context = doctrine_context
         self.discussion_history: list[Message] = []
         self.cycle_events: list[str] = []  # Running log of notable events this cycle
+        # Summarised retrieval for this cycle, set by the retrieval phase.
+        # Until 2026-09-14 retrieval results were written to CycleState and read
+        # by nobody: agents paid for queries every cycle, the hits were logged,
+        # and nothing re-entered any prompt.
+        self.retrieved_context: str = ""
 
     def build_system_message(self) -> Message:
         """Construct the full system message for this agent."""
@@ -50,6 +55,15 @@ class AgentContext:
 
         # Doctrine context
         parts.append(f"\n---\n\n## Current Doctrine\n\n{self.doctrine_context}")
+
+        # Anything this agent retrieved this cycle
+        if self.retrieved_context:
+            parts.append(
+                "\n---\n\n## Retrieved This Cycle\n\n"
+                "You requested the following material. Cite it by document id "
+                "when you rely on it.\n\n"
+                f"{self.retrieved_context}"
+            )
 
         # Memory (recent entries, most recent last)
         if self.memory:
