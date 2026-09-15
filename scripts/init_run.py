@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from controller.config import load_config
 from controller.logging.logger import AppendOnlyJSONLLogger
+from controller.prompts import materialise_prompts, materialise_world_template
 from controller.world.reset import archive_world, initialize_world
 
 
@@ -27,6 +28,8 @@ def main() -> None:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--condition", required=True, choices=["BASELINE", "MEM_RESET"])
     parser.add_argument("--cycles", type=int, default=100)
+    parser.add_argument("--framing", choices=["disclosed","undisclosed"], default=None)
+    parser.add_argument("--identity-seed", choices=["prescribed","minimal"], default=None)
     parser.add_argument("--config", type=str, default=None)
     parser.add_argument(
         "--archive-previous",
@@ -41,6 +44,8 @@ def main() -> None:
         condition=args.condition,
         cycles=args.cycles,
         config_file=args.config,
+        framing=args.framing,
+        identity_seed=args.identity_seed,
     )
 
     # Archive previous world state if requested
@@ -53,6 +58,7 @@ def main() -> None:
             print(f"Warning: Previous run directory {prev_log_dir} not found, skipping archive")
 
     # Initialize world from template
+    materialise_world_template(config, config.world_template_dir)
     initialize_world(config.world_template_dir, config.world_dir)
     print(f"Initialized world from template: {config.world_template_dir} -> {config.world_dir}")
 
@@ -66,7 +72,8 @@ def main() -> None:
     print(f"Wrote config.json")
 
     # Copy prompts for version-locking
-    log.copy_prompts(config.effective_prompts_dir)
+    materialise_prompts(config, config.prompts_dir)
+    log.copy_prompts(config.prompts_dir)
     print(f"Copied prompts for version-locking")
 
     print(f"\nRun {config.run_id} initialized. Ready to execute:")

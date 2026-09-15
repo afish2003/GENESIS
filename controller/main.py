@@ -16,6 +16,7 @@ from rich.logging import RichHandler
 
 from controller.config import load_config
 from controller.inference.factory import create_backend, describe_backend
+from controller.prompts import materialise_prompts, materialise_world_template
 
 console = Console()
 
@@ -69,6 +70,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Whether agents are told they are studied (overrides FRAMING in .env)",
     )
     parser.add_argument(
+        "--identity-seed",
+        choices=["prescribed", "minimal"],
+        default=None,
+        help="How much identity is given rather than developed",
+    )
+    parser.add_argument(
         "--pause-after-cycle",
         type=int,
         default=None,
@@ -95,6 +102,7 @@ async def run(argv: list[str] | None = None) -> None:
         config_file=args.config,
         pause_after_cycle=args.pause_after_cycle,
         framing=args.framing,
+        identity_seed=args.identity_seed,
         inference_backend=args.backend,
         model_name=args.model,
         api_base_url=args.api_base_url,
@@ -105,7 +113,7 @@ async def run(argv: list[str] | None = None) -> None:
     console.print(f"  Cycles:    {config.total_cycles}")
     console.print(f"  Model:     {config.model_name}")
     console.print(f"  Inference: {describe_backend(config)}")
-    console.print(f"  Framing:   {config.framing.value} ({config.effective_prompts_dir})")
+    console.print(f"  Framing:   {config.framing.value} | seed: {config.identity_seed.value}")
     console.print()
 
     # Initialize inference backend
@@ -125,7 +133,8 @@ async def run(argv: list[str] | None = None) -> None:
     log.write_config(config.model_dump(mode="json"))
 
     # Copy prompts for version-locking
-    log.copy_prompts(config.effective_prompts_dir)
+    materialise_prompts(config, config.prompts_dir)
+    log.copy_prompts(config.prompts_dir)
 
     # Determine start cycle
     start_cycle = 0

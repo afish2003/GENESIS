@@ -35,3 +35,7 @@ knowledge_bases/self_history/
 
 # Raw corpus source files (regenerate with scripts/fetch_corpus.py)
 raw_corpus/
+
+# Rendered from prompts_src/ and world_template_src/ per run
+/prompts/
+/world_template/

@@ -9,7 +9,7 @@ from typing import Optional
 
 import yaml
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class Condition(str, Enum):
@@ -50,6 +50,23 @@ class SandboxBackend(str, Enum):
 
     NULL = "null"
     DOCKER = "docker"
+
+
+class IdentitySeed(str, Enum):
+    """How much identity the agents are given versus left to develop.
+
+    PRESCRIBED  the PLAN.md section 6 design — full role assignment plus an
+                identity statement that already states the agent's values and
+                its characteristic weakness.
+    MINIMAL     name, partner, task and one temperamental nudge. The identity
+                statement starts as "I have not yet worked out what I value",
+                for the agent to author through phase 11.
+
+    Composes freely with `framing`: all four combinations are valid.
+    """
+
+    PRESCRIBED = "prescribed"
+    MINIMAL = "minimal"
 
 
 class Backend(str, Enum):
@@ -140,6 +157,10 @@ class RunConfig(BaseModel):
         default=Framing.DISCLOSED,
         description="disclosed | undisclosed — whether agents are told they are studied",
     )
+    identity_seed: IdentitySeed = Field(
+        default=IdentitySeed.PRESCRIBED,
+        description="prescribed | minimal — how much identity is given rather than developed",
+    )
 
     # Code execution — off by default; see docs/containment_design.md
     sandbox_backend: SandboxBackend = Field(
@@ -178,23 +199,41 @@ class RunConfig(BaseModel):
 
     # Paths
     world_dir: Path = Field(default=Path("./world"))
+    # Sources carry conditional markup; the rendered output for a run is
+    # materialised into world_template_dir / prompts_dir below.
+    prompts_src_dir: Path = Field(default=Path("./prompts_src"))
+    world_template_src_dir: Path = Field(default=Path("./world_template_src"))
     world_template_dir: Path = Field(default=Path("./world_template"))
     research_logs_dir: Path = Field(default=Path("./research_logs"))
     prompts_dir: Path = Field(default=Path("./prompts"))
     knowledge_bases_dir: Path = Field(default=Path("./knowledge_bases"))
 
-    @property
-    def effective_prompts_dir(self) -> Path:
-        """Prompt directory for this run, honouring the framing condition.
+    @model_validator(mode="after")
+    def _reject_conflicting_prompt_selection(self) -> "RunConfig":
+        """Refuse a run whose prompt dimensions would be silently ignored.
 
-        An explicit prompts_dir (env, YAML or CLI) always wins, so a custom
-        prompt set can still be pointed at directly.
+        prompts_dir used to be both a render target and an override, so setting
+        it in a YAML while also passing --framing meant the framing was dropped
+        without a word. That produced mislabelled experimental data, which is
+        worse than a crash. Dimensions now render from prompts_src_dir; a
+        hand-pointed prompts_dir is still allowed, but not together with a
+        non-default dimension.
         """
-        if self.prompts_dir != Path("./prompts"):
-            return self.prompts_dir
-        if self.framing is Framing.UNDISCLOSED:
-            return Path("./prompts_undisclosed")
-        return self.prompts_dir
+        if self.prompts_dir == Path("./prompts"):
+            return self
+        non_default = []
+        if self.framing is not Framing.DISCLOSED:
+            non_default.append(f"framing={self.framing.value}")
+        if self.identity_seed is not IdentitySeed.PRESCRIBED:
+            non_default.append(f"identity_seed={self.identity_seed.value}")
+        if non_default:
+            raise ValueError(
+                f"prompts_dir is set to {self.prompts_dir} AND "
+                f"{', '.join(non_default)} was requested. A hand-pointed prompt "
+                f"directory is used verbatim, so those dimensions would be "
+                f"silently ignored. Set one or the other, not both."
+            )
+        return self
 
     @property
     def run_log_dir(self) -> Path:
@@ -243,6 +282,7 @@ def load_config(
         "API_JSON_MODE": "api_json_mode",
         "REQUEST_TIMEOUT": "request_timeout",
         "FRAMING": "framing",
+        "IDENTITY_SEED": "identity_seed",
         "SANDBOX_BACKEND": "sandbox_backend",
         "INDEPENDENT_PROPOSALS": "independent_proposals",
         "DOCTRINE_APPLY_MODE": "doctrine_apply_mode",

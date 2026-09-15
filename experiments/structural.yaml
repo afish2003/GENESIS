@@ -2,6 +2,6 @@
 # Identity held at the prescribed default; the ONLY change from
 # experiments/prescribed.yaml is that doctrine proposals are drafted without
 # the shared discussion history.
-prompts_dir: ./prompts
-world_template_dir: ./world_template
+framing: disclosed
+identity_seed: prescribed
 independent_proposals: true

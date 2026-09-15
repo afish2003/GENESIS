@@ -278,7 +278,7 @@ class CycleOrchestrator:
         for agent_id in ["axiom", "flux"]:
             contexts[agent_id] = build_agent_context(
                 agent_id=agent_id,
-                prompts_dir=self.config.effective_prompts_dir,
+                prompts_dir=self.config.prompts_dir,
                 identity=self.world.identities[agent_id],
                 memory=self.world.memory[agent_id],
                 doctrine_texts=doctrine_texts,

@@ -1,0 +1,5 @@
+# Arm D — undisclosed framing
+# Agents are not told they are in a research experiment. Now composes with any
+# identity_seed; the combination was unrepresentable before 2026-09-14.
+framing: undisclosed
+identity_seed: prescribed

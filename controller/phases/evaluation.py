@@ -62,7 +62,7 @@ async def execute(
     doctrine_context = "\n\n".join(doctrine_parts)
 
     # Load evaluator system prompt
-    evaluator_prompt = load_system_prompt(config.effective_prompts_dir, "evaluator_system.md")
+    evaluator_prompt = load_system_prompt(config.prompts_dir, "evaluator_system.md")
 
     # Get protocol version for context
     proto = world.protocols.get(proposal["protocol_id"])
