@@ -15,8 +15,8 @@ from rich.console import Console
 from rich.logging import RichHandler
 
 from controller.config import load_config
-from controller.inference.factory import create_backend, describe_backend
-from controller.prompts import materialise_prompts, materialise_world_template
+from controller.inference.factory import describe_backend
+from controller.run import prepare_run
 
 console = Console()
 
@@ -116,77 +116,27 @@ async def run(argv: list[str] | None = None) -> None:
     console.print(f"  Framing:   {config.framing.value} | seed: {config.identity_seed.value}")
     console.print()
 
-    # Initialize inference backend
-    backend = create_backend(config)
-
-    # Initialize world state
-    from controller.world.reset import initialize_world, load_checkpoint
-    from controller.world.state import WorldState
-
-    # Initialize logging
-    from controller.logging.logger import AppendOnlyJSONLLogger
-
-    log = AppendOnlyJSONLLogger(config.run_log_dir)
-    log.initialize()
-
-    # Write run config to log directory
-    log.write_config(config.model_dump(mode="json"))
-
-    # Copy prompts for version-locking
-    materialise_prompts(config, config.prompts_dir)
-    log.copy_prompts(config.prompts_dir)
-
-    # Determine start cycle
-    start_cycle = 0
-    if args.resume:
-        checkpoint = load_checkpoint(config.run_log_dir)
-        if checkpoint:
-            start_cycle = checkpoint["last_completed_cycle"] + 1
-            console.print(f"[yellow]Resuming from cycle {start_cycle}[/]")
-        else:
-            console.print("[yellow]No checkpoint found, starting from cycle 0[/]")
-
-    # Initialize world from template (only if starting fresh)
-    if start_cycle == 0:
-        initialize_world(config.world_template_dir, config.world_dir)
-
-    world = WorldState(config.world_dir, agents=config.agents)
-
-    # Load scenario library
-    from controller.scenarios.library import load_scenario_library
-
-    scenario_library = load_scenario_library(config)
-
-    # Initialize knowledge bases
-    from controller.retrieval.databases import KnowledgeBaseManager
-
-    kb_manager = KnowledgeBaseManager(
-        kb_dir=config.knowledge_bases_dir,
-        bm25_pool_size=config.bm25_candidate_pool,
-        rerank_top_k=config.rerank_top_k,
-        embedding_model=config.embedding_model,
-    )
-    kb_manager.initialize(load_embeddings=True)
+    prepared = prepare_run(config, resume=args.resume)
 
     # Build and run the cycle orchestrator
     from controller.cycle import CycleOrchestrator
 
     orchestrator = CycleOrchestrator(
-        config=config,
-        backend=backend,
-        world=world,
-        log=log,
-        scenario_library=scenario_library,
-        kb_manager=kb_manager,
+        config=prepared.config,
+        backend=prepared.backend,
+        world=prepared.world,
+        log=prepared.log,
+        scenario_library=prepared.scenario_library,
+        kb_manager=prepared.kb_manager,
     )
 
     try:
-        await orchestrator.run_all_cycles(start_cycle=start_cycle)
+        await orchestrator.run_all_cycles(start_cycle=prepared.start_cycle)
         console.print(f"\n[bold green]Run {config.run_id} complete.[/]")
     except KeyboardInterrupt:
         console.print(f"\n[yellow]Run {config.run_id} interrupted.[/]")
     finally:
-        await backend.close()
+        await prepared.backend.close()
 
 
 def main(argv: list[str] | None = None) -> None:

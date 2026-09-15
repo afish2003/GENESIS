@@ -42,7 +42,7 @@ async def execute(
     events = []
 
     # Load memory summarizer prompt
-    summarizer_prompt = load_system_prompt(config.prompts_dir, "memory_summarizer.md")
+    summarizer_prompt = load_system_prompt(config.run_prompts_dir, "memory_summarizer.md")
 
     agent_names = {a: config.display_name(a) for a in config.agents}
 

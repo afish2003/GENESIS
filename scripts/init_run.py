@@ -1,7 +1,10 @@
-"""Initialize a new experimental run.
+"""Initialize a run: render prompts and world template, create the log directory.
 
-Creates the run log directory, initializes the world from template,
-copies prompts for version-locking, and writes the run config.
+Thin wrapper over controller.run.prepare_run. It used to assemble a run itself,
+in a slightly different order from controller/main.py — which is how main.py
+came to render prompts but not the world template, producing runs whose
+config.json and identity statements disagreed. One code path now, two entry
+points.
 
 Usage:
     python scripts/init_run.py --run-id RUN_001 --condition BASELINE --cycles 100
@@ -10,17 +13,14 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
-# Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from controller.config import load_config
-from controller.logging.logger import AppendOnlyJSONLLogger
-from controller.prompts import materialise_prompts, materialise_world_template
-from controller.world.reset import archive_world, initialize_world
+from controller.run import prepare_run
+from controller.world.reset import archive_world
 
 
 def main() -> None:
@@ -28,14 +28,14 @@ def main() -> None:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--condition", required=True, choices=["BASELINE", "MEM_RESET"])
     parser.add_argument("--cycles", type=int, default=100)
-    parser.add_argument("--framing", choices=["disclosed","undisclosed"], default=None)
-    parser.add_argument("--identity-seed", choices=["prescribed","minimal"], default=None)
+    parser.add_argument("--framing", choices=["disclosed", "undisclosed"], default=None)
+    parser.add_argument("--identity-seed", choices=["prescribed", "minimal"], default=None)
     parser.add_argument("--config", type=str, default=None)
     parser.add_argument(
         "--archive-previous",
         type=str,
         default=None,
-        help="Run ID of previous run to archive world state from",
+        help="Run id whose log directory should receive the current world state",
     )
     args = parser.parse_args()
 
@@ -48,36 +48,26 @@ def main() -> None:
         identity_seed=args.identity_seed,
     )
 
-    # Archive previous world state if requested
     if args.archive_previous:
         prev_log_dir = config.research_logs_dir / args.archive_previous
         if prev_log_dir.exists():
             archive_world(config.world_dir, prev_log_dir)
             print(f"Archived world state to {prev_log_dir}/world_archive/")
         else:
-            print(f"Warning: Previous run directory {prev_log_dir} not found, skipping archive")
+            print(f"Warning: {prev_log_dir} not found, skipping archive")
 
-    # Initialize world from template
-    materialise_world_template(config, config.world_template_dir)
-    initialize_world(config.world_template_dir, config.world_dir)
-    print(f"Initialized world from template: {config.world_template_dir} -> {config.world_dir}")
+    # Embeddings are only needed to serve queries, not to initialise a run.
+    prepare_run(config, load_embeddings=False)
 
-    # Initialize log directory
-    log = AppendOnlyJSONLLogger(config.run_log_dir)
-    log.initialize()
-    print(f"Created run log directory: {config.run_log_dir}")
-
-    # Write config
-    log.write_config(config.model_dump(mode="json"))
-    print(f"Wrote config.json")
-
-    # Copy prompts for version-locking
-    materialise_prompts(config, config.prompts_dir)
-    log.copy_prompts(config.prompts_dir)
-    print(f"Copied prompts for version-locking")
-
+    print(f"Run log directory:  {config.run_log_dir}")
+    print(f"Prompts rendered:   {config.run_prompts_dir} "
+          f"(framing={config.framing.value}, identity_seed={config.identity_seed.value})")
+    print(f"World initialized:  {config.world_dir}")
+    print(f"Agents:             {', '.join(config.agents)}")
+    print(f"Task:               {config.task}")
     print(f"\nRun {config.run_id} initialized. Ready to execute:")
-    print(f"  python -m controller.main --run-id {config.run_id} --condition {config.condition.value} --cycles {config.total_cycles}")
+    print(f"  python -m controller.main --run-id {config.run_id} "
+          f"--condition {config.condition.value} --cycles {config.total_cycles}")
 
 
 if __name__ == "__main__":

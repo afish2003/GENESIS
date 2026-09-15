@@ -27,13 +27,30 @@ _LOREM = (
 )
 
 
+#: Values for fields whose name implies a constrained domain the JSON schema
+#: does not express. Without these the mock emits lorem for `target_document`,
+#: every doctrine revision fails to resolve, and an integration test can never
+#: exercise the path where a revision actually lands.
+DEFAULT_FIELD_HINTS: dict[str, str] = {
+    "target_document": "doctrine.md",
+    "protocol_id": "mock_protocol",
+    "artifact_id": "mock_artifact",
+}
+
+
 class MockBackend(InferenceBackend):
     """Deterministic fake backend. Returns schema-valid JSON, or prose."""
 
-    def __init__(self, model: str = "mock", seed: int = 0) -> None:
+    def __init__(
+        self,
+        model: str = "mock",
+        seed: int = 0,
+        field_hints: dict[str, str] | None = None,
+    ) -> None:
         self.model = model
         self.call_count = 0
         self._seed = seed
+        self.field_hints = {**DEFAULT_FIELD_HINTS, **(field_hints or {})}
 
     async def complete(
         self,
@@ -45,7 +62,7 @@ class MockBackend(InferenceBackend):
 
         schema = _extract_schema(content)
         if schema is not None:
-            payload = _synthesize(schema, schema)
+            payload = _synthesize(schema, schema, hints=self.field_hints)
             text = json.dumps(payload)
         else:
             # Free-form phase (e.g. a discussion turn)
@@ -102,21 +119,26 @@ def _resolve_ref(ref: str, root: dict[str, Any]) -> dict[str, Any] | None:
     return node if isinstance(node, dict) else None
 
 
-def _synthesize(node: dict[str, Any], root: dict[str, Any], depth: int = 0) -> Any:
+def _synthesize(
+    node: dict[str, Any],
+    root: dict[str, Any],
+    depth: int = 0,
+    hints: dict[str, str] | None = None,
+) -> Any:
     """Build a minimal value satisfying a JSON-schema node."""
     if depth > 8:
         return None
 
     if "$ref" in node:
         resolved = _resolve_ref(node["$ref"], root)
-        return _synthesize(resolved, root, depth + 1) if resolved else None
+        return _synthesize(resolved, root, depth + 1, hints) if resolved else None
 
     # Choose the first branch of a union that isn't null.
     for key in ("anyOf", "oneOf", "allOf"):
         if key in node:
             for option in node[key]:
                 if option.get("type") != "null":
-                    return _synthesize(option, root, depth + 1)
+                    return _synthesize(option, root, depth + 1, hints)
             return None
 
     if "enum" in node and node["enum"]:
@@ -130,10 +152,13 @@ def _synthesize(node: dict[str, Any], root: dict[str, Any], depth: int = 0) -> A
     if node_type == "object" or "properties" in node:
         props: dict[str, Any] = node.get("properties", {})
         required = set(node.get("required", props.keys()))
+        # Hinted fields are emitted even when optional: a schema default of ""
+        # would otherwise silently drop the value the caller asked for.
         return {
-            name: _synthesize(spec, root, depth + 1)
+            name: (hints[name] if hints and name in hints
+                   else _synthesize(spec, root, depth + 1, hints))
             for name, spec in props.items()
-            if name in required
+            if name in required or (hints and name in hints)
         }
 
     if node_type == "array":
@@ -141,7 +166,7 @@ def _synthesize(node: dict[str, Any], root: dict[str, Any], depth: int = 0) -> A
         min_items = node.get("minItems", 1)
         if not items:
             return []
-        element = _synthesize(items, root, depth + 1)
+        element = _synthesize(items, root, depth + 1, hints)
         return [element] * max(min_items, 1)
 
     if node_type == "integer":

@@ -223,13 +223,25 @@ class RunConfig(BaseModel):
 
     # Paths
     world_dir: Path = Field(default=Path("./world"))
-    # Sources carry conditional markup; the rendered output for a run is
-    # materialised into world_template_dir / prompts_dir below.
+    # Sources carry conditional markup. The rendered output for a run lands in
+    # that run's own log directory (see run_prompts_dir / run_world_template_dir),
+    # which makes it version-locked by construction, keeps concurrent arms from
+    # overwriting each other, and means the controller never writes into a
+    # directory a researcher owns.
     prompts_src_dir: Path = Field(default=Path("./prompts_src"))
     world_template_src_dir: Path = Field(default=Path("./world_template_src"))
-    world_template_dir: Path = Field(default=Path("./world_template"))
     research_logs_dir: Path = Field(default=Path("./research_logs"))
-    prompts_dir: Path = Field(default=Path("./prompts"))
+    prompts_dir: Optional[Path] = Field(
+        default=None,
+        description="Use this prompt directory verbatim instead of rendering "
+                    "prompts_src_dir. Never written to or deleted. Mutually "
+                    "exclusive with non-default framing / identity_seed.",
+    )
+    world_template_dir: Optional[Path] = Field(
+        default=None,
+        description="Use this world template verbatim instead of rendering "
+                    "world_template_src_dir. Never written to or deleted.",
+    )
     knowledge_bases_dir: Path = Field(default=Path("./knowledge_bases"))
 
     @field_validator("agents")
@@ -260,6 +272,16 @@ class RunConfig(BaseModel):
             return names[0] if names else ""
         return ", ".join(names[:-1]) + f" and {names[-1]}"
 
+    @property
+    def run_prompts_dir(self) -> Path:
+        """Where this run's prompts are read from at runtime."""
+        return self.run_log_dir / "prompts"
+
+    @property
+    def run_world_template_dir(self) -> Path:
+        """Where this run's clean world template is read from."""
+        return self.run_log_dir / "world_template"
+
     @model_validator(mode="after")
     def _reject_conflicting_prompt_selection(self) -> "RunConfig":
         """Refuse a run whose prompt dimensions would be silently ignored.
@@ -271,7 +293,7 @@ class RunConfig(BaseModel):
         hand-pointed prompts_dir is still allowed, but not together with a
         non-default dimension.
         """
-        if self.prompts_dir == Path("./prompts"):
+        if self.prompts_dir is None:
             return self
         non_default = []
         if self.framing is not Framing.DISCLOSED:
