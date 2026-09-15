@@ -1,0 +1,6 @@
+# Every adaptability axis at once, to prove they compose.
+agents: [axiom, flux, vertex]
+task: code
+framing: undisclosed
+identity_seed: minimal
+independent_proposals: true
