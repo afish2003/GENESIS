@@ -58,7 +58,9 @@ async def execute(
     if hasattr(output, "proposing_agent"):
         output.proposing_agent = lead_agent
 
-    artifact_id = task.apply(world, output, cycle)
+    artifact_id = task.apply(
+        world, output, cycle, max_tokens=config.max_protocol_length_tokens
+    )
 
     # Evaluation reads this; keep a task-neutral id alongside the raw output.
     cycle.proposed_protocol = {**output.model_dump(), "protocol_id": artifact_id}

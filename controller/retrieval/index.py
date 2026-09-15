@@ -15,6 +15,17 @@ from controller.phases.schemas import RetrievalResultItem
 
 logger = logging.getLogger(__name__)
 
+#: Results at or below this score are dropped rather than returned as padding.
+#: BM25 gives 0.0 to a document sharing no query terms.
+MIN_RELEVANCE_SCORE = 0.0
+
+#: The floor is only applied above this corpus size. BM25's IDF term is
+#: degenerate on a tiny index — a word appearing in every document scores 0.0
+#: however relevant it is — and self_history is tiny for the first cycles of
+#: every run. Filtering there would hide the agents' own past from them exactly
+#: when there is least of it.
+MIN_CORPUS_FOR_RELEVANCE_FLOOR = 10
+
 
 class RetrievalIndex:
     """BM25 + embedding rerank retrieval over a knowledge base.
@@ -55,9 +66,11 @@ class RetrievalIndex:
             except Exception as e:
                 logger.error("Failed to load document %s: %s", filepath, e)
 
-        if not self._documents:
-            # Also try loading a single JSONL file
-            for filepath in sorted(docs_dir.glob("*.jsonl")):
+        # Always load JSONL too. This used to be gated on `not self._documents`,
+        # so a directory holding both per-document .json files and a
+        # build_kb.py-produced <kb>_corpus.jsonl silently dropped the corpus.
+        for filepath in sorted(docs_dir.glob("*.jsonl")):
+        
                 try:
                     with open(filepath, encoding="utf-8") as f:
                         for line in f:
@@ -94,6 +107,17 @@ class RetrievalIndex:
             logger.info("Loaded embedding model: %s", model_name)
         except ImportError:
             logger.warning("sentence-transformers not installed. Reranking disabled.")
+        except Exception as e:  # noqa: BLE001 - a bad repo id or no network
+            # Only ImportError was caught, so a wrong model id or an offline
+            # host killed KnowledgeBaseManager.initialize() — and with it the
+            # whole run — with a raw traceback instead of degrading to BM25.
+            # The repo id was in fact wrong once (commit ffb0768).
+            logger.error(
+                "Could not load embedding model %r (%s: %s). Falling back to "
+                "BM25 only; retrieval will be less precise but the run continues.",
+                model_name, type(e).__name__, e,
+            )
+            self._embedder = None
 
     def query(self, query_text: str) -> list[RetrievalResultItem]:
         """Run BM25 retrieval with optional embedding rerank.
@@ -118,10 +142,17 @@ class RetrievalIndex:
             candidate_indices = [i for i, _ in candidates]
 
             try:
-                query_embedding = self._embedder.encode([query_text])
-                doc_embeddings = self._embedder.encode(candidate_texts)
+                # normalize_embeddings=True makes the dot product an actual
+                # cosine. Without it these were unnormalised BGE vectors, so
+                # ranking carried a document-length bias while the comment
+                # claimed cosine. compare_arms.py already did this correctly.
+                query_embedding = self._embedder.encode(
+                    [query_text], normalize_embeddings=True
+                )
+                doc_embeddings = self._embedder.encode(
+                    candidate_texts, normalize_embeddings=True
+                )
 
-                # Cosine similarity
                 import numpy as np
 
                 similarities = np.dot(doc_embeddings, query_embedding.T).flatten()
@@ -133,6 +164,19 @@ class RetrievalIndex:
                 candidates = candidates[:self.rerank_top_k]
         else:
             candidates = candidates[:self.rerank_top_k]
+
+        # A query sharing no terms with any document still produced
+        # rerank_top_k results at score 0.0, in index order, logged as
+        # retrieved evidence. Analysis could not distinguish "found five
+        # relevant documents" from "found nothing".
+        if self.document_count >= MIN_CORPUS_FOR_RELEVANCE_FLOOR:
+            kept = [(i, sc) for i, sc in candidates if sc > MIN_RELEVANCE_SCORE]
+            if len(kept) < len(candidates):
+                logger.debug(
+                    "%s: dropped %d zero-relevance result(s) for %r",
+                    self.name, len(candidates) - len(kept), query_text[:60],
+                )
+            candidates = kept
 
         # Build results
         results = []

@@ -72,6 +72,41 @@ async def execute(
     )
     output.protocol_id = proposal["protocol_id"]
 
+    # total_score is the primary dependent variable and is read directly by
+    # analyze_run.py and compare_arms.py. It was only range-checked, never
+    # compared to the parts, so a model returning five 8s with total_score 20
+    # corrupted every downstream number in silence.
+    dimension_total = sum(output.scores.model_dump().values())
+    if output.total_score != dimension_total:
+        _logger.warning(
+            "Cycle %d: evaluator reported total_score %d but its dimensions sum "
+            "to %d; using the sum.",
+            cycle.cycle_id, output.total_score, dimension_total,
+        )
+        events.append(EventEnvelope(
+            event_type=EventType.NOTABLE_EVENT,
+            run_id=config.run_id,
+            condition=config.condition.value,
+            cycle_id=cycle.cycle_id,
+            payload={
+                "kind": "evaluation_total_mismatch",
+                "reported_total": output.total_score,
+                "dimension_sum": dimension_total,
+                "scores": output.scores.model_dump(),
+                "detail": "Reported total disagreed with the dimensions; the "
+                          "sum was used so the primary metric stays internally "
+                          "consistent.",
+            },
+        ))
+        output.total_score = dimension_total
+
+    # Justifications keyed to something other than the rubric render as blanks
+    # in the interpretation phase.
+    missing = set(task.dimensions) - set(output.justifications)
+    if missing:
+        _logger.info("Cycle %d: evaluator gave no justification for %s",
+                     cycle.cycle_id, sorted(missing))
+
     # Store in cycle state for interpretation phase
     cycle.evaluation_result = output.model_dump()
 

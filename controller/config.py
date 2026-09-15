@@ -358,6 +358,8 @@ def load_config(
         "FRAMING": "framing",
         "IDENTITY_SEED": "identity_seed",
         "AGENTS": "agents",
+        "SCENARIO_INJECTION_CYCLES": "scenario_injection_cycles",
+        "PHASE_SEQUENCE": "phase_sequence",
         "TASK": "task",
         "SANDBOX_BACKEND": "sandbox_backend",
         "INDEPENDENT_PROPOSALS": "independent_proposals",
@@ -375,9 +377,32 @@ def load_config(
         "TEMPERATURE_DISCUSSION": "temperature_discussion",
         "TEMPERATURE_STRUCTURED": "temperature_structured",
     }
+    # Fields whose type is a list need the comma string split before pydantic
+    # sees it. AGENTS was mapped but unusable: `AGENTS=axiom,flux` raised
+    # "Input should be a valid list" at startup.
+    _LIST_FIELDS = {"agents", "scenario_injection_cycles", "phase_sequence"}
+    _INT_LIST_FIELDS = {"scenario_injection_cycles"}
+
     for env_key, field_name in env_map.items():
         val = os.getenv(env_key)
-        if val is not None:
+        if val is None:
+            continue
+        if field_name in _LIST_FIELDS:
+            items = [part.strip() for part in val.split(",") if part.strip()]
+            if field_name in _INT_LIST_FIELDS:
+                try:
+                    items = [int(i) for i in items]
+                except ValueError:
+                    raise ValueError(
+                        f"{env_key} must be a comma-separated list of integers, "
+                        f"got {val!r}"
+                    ) from None
+            env_values[field_name] = items
+        elif val == "":
+            # An empty assignment (`WATCHDOG_ENABLED=` in .env) is pydantic's
+            # bool_parsing error, not an unset value. Treat it as unset.
+            continue
+        else:
             env_values[field_name] = val
 
     # Layer YAML config if provided

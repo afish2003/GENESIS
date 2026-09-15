@@ -55,10 +55,22 @@ class DockerSandbox(ExecutionSandbox):
         self.pids_limit = pids_limit
         self.workspace_root = workspace_root
 
+    @property
+    def runtime_argv(self) -> list[str]:
+        """The runtime as argv.
+
+        `runtime` is documented as accepting "docker --runtime runsc" for
+        gVisor, and health_check split it — but _container_args passed the whole
+        string as a single argv element to create_subprocess_exec, so the
+        documented gVisor path looked up an executable literally named
+        "docker --runtime runsc" and failed with FileNotFoundError.
+        """
+        return self.runtime.split()
+
     def _container_args(self, workspace: Path, timeout: float) -> list[str]:
         """Every flag here is a containment property, not a preference."""
         return [
-            self.runtime, "run",
+            *self.runtime_argv, "run",
             "--rm",                         # ephemeral: no cross-execution persistence
             "--network", "none",            # no exfiltration, no fetching, no LAN, no Ollama
             "--read-only",                  # immutable rootfs
@@ -86,7 +98,10 @@ class DockerSandbox(ExecutionSandbox):
         try:
             self._materialise(request, workspace)
 
+            container_name = f"genesis_{workspace.name}"
             args = self._container_args(workspace, timeout)
+            args.insert(2, "--name")
+            args.insert(3, container_name)
             args[-1] = request.entrypoint
 
             proc = await asyncio.create_subprocess_exec(
@@ -100,7 +115,7 @@ class DockerSandbox(ExecutionSandbox):
                     proc.communicate(), timeout=timeout + 15
                 )
             except asyncio.TimeoutError:
-                await self._kill(proc)
+                await self._kill(proc, container_name)
                 return ExecutionResult(
                     outcome=ExecutionOutcome.TIMEOUT,
                     duration_seconds=time.monotonic() - started,
@@ -155,8 +170,23 @@ class DockerSandbox(ExecutionSandbox):
             name = safe_artifact_id(raw_name, fallback="file.txt")
             (workspace / name).write_text(content, encoding="utf-8")
 
-    @staticmethod
-    async def _kill(proc) -> None:
+    async def _kill(self, proc, container: str | None = None) -> None:
+        """Kill the container, then the client.
+
+        Killing only the client left the container running: --rm cleans up when
+        the container exits, not when the client dies, so the "outer deadline in
+        case the runtime wedges" did not actually stop a wedged container.
+        """
+        if container:
+            try:
+                killer = await asyncio.create_subprocess_exec(
+                    *self.runtime_argv, "kill", container,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                await asyncio.wait_for(killer.wait(), timeout=15)
+            except (OSError, asyncio.TimeoutError) as e:
+                logger.error("Could not kill container %s: %s", container, e)
         try:
             proc.kill()
             await proc.wait()
@@ -164,11 +194,11 @@ class DockerSandbox(ExecutionSandbox):
             pass
 
     async def health_check(self) -> bool:
-        if shutil.which(self.runtime.split()[0]) is None:
+        if shutil.which(self.runtime_argv[0]) is None:
             return False
         try:
             proc = await asyncio.create_subprocess_exec(
-                self.runtime.split()[0], "info",
+                self.runtime_argv[0], "info",
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
             )

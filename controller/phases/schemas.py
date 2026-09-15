@@ -54,7 +54,9 @@ class RetrievalQueryOutput(BaseModel):
     agent_id: str = Field(default="", description="Set by controller after parsing")
     queries: list[str] = Field(
         default_factory=list,
-        max_length=3,
+        # No hard cap here: config.max_retrieval_queries is the knob, and a
+        # schema-level max_length=3 made any larger value unusable — the model
+        # complied, pydantic rejected it, all retries burned, the phase died.
         description="Up to 3 retrieval queries",
     )
 

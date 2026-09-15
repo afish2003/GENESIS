@@ -28,6 +28,22 @@ from controller.inference.backend import InferenceBackend, InferenceResult, Mess
 
 logger = logging.getLogger(__name__)
 
+#: Transient transport failures worth retrying. Only ConnectError and
+#: ConnectTimeout were caught, but with a 600 s ceiling against a local 32B
+#: model the realistic failure is a ReadTimeout — which is not a subclass of
+#: either, so it propagated out of the retry loop, out of complete_structured,
+#: out of the phase, and was swallowed by _run_phase.
+_RETRYABLE = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    httpx.ReadTimeout,
+    httpx.WriteTimeout,
+    httpx.PoolTimeout,
+    httpx.ReadError,
+    httpx.WriteError,
+    httpx.RemoteProtocolError,
+)
+
 # Connection retry settings — mirrors OllamaBackend
 _RETRY_DELAYS = [5, 15, 45]  # seconds — exponential backoff
 
@@ -122,7 +138,7 @@ class OpenAICompatBackend(InferenceBackend):
                 response = await self._client.post(url, json=payload)
                 response.raise_for_status()
                 return response
-            except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+            except _RETRYABLE as e:
                 last_error = e
                 logger.warning("Connection error (attempt %d): %s", attempt + 1, e)
             except httpx.HTTPStatusError as e:
@@ -148,7 +164,8 @@ class OpenAICompatBackend(InferenceBackend):
         try:
             response = await self._client.get(f"{self.base_url}/models")
             return response.status_code == 200
-        except (httpx.ConnectError, httpx.ConnectTimeout):
+        except httpx.HTTPError:
+            # Any transport failure means 'not reachable', never a raise.
             return False
 
     async def close(self) -> None:

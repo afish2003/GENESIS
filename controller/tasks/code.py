@@ -80,7 +80,8 @@ class CodeTask(Task):
     def output_schema(self) -> Type[BaseModel]:
         return CodeArtifactOutput
 
-    def apply(self, world: WorldState, output: BaseModel, cycle: CycleState) -> str:
+    def apply(self, world: WorldState, output: BaseModel, cycle: CycleState,
+              max_tokens: int | None = None) -> str:
         assert isinstance(output, CodeArtifactOutput)
         output.artifact_id = safe_artifact_id(
             output.artifact_id, fallback=f"module_cycle{cycle.cycle_id}"
@@ -89,6 +90,15 @@ class CodeTask(Task):
         body = output.content
         if output.tests.strip():
             body += f"\n\n# --- tests ---\n{output.tests}"
+
+        if max_tokens:
+            body, truncated = self.enforce_length(body, max_tokens)
+            if truncated:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Cycle %d: %s truncated at the configured length limit",
+                    cycle.cycle_id, aid,
+                )
 
         if output.action.value == "create" or aid not in world.protocols:
             world.protocols[aid] = ProtocolDocument(

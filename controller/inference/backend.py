@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from typing import Any, Type, TypeVar
 
@@ -25,6 +26,38 @@ class InferenceResult(BaseModel):
     total_duration_ms: int | None = None
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
+
+
+_FENCE = re.compile(r"```[a-zA-Z0-9_+-]*\s*\n?(.*?)\n?\s*```", re.DOTALL)
+
+
+def extract_json(raw: str) -> str:
+    """Pull the JSON payload out of a model response.
+
+    The previous logic split on newlines and dropped the first and last. For a
+    single-line fenced response — ```{"a":1}``` — the first line both starts
+    with a fence and ends with one, so lines[1:-1] was empty and the content
+    became "", failing validation on all three attempts with an unhelpful
+    error. Prose before the fence defeated stripping entirely, since the check
+    was startswith("```").
+    """
+    text = (raw or "").strip()
+
+    match = _FENCE.search(text)
+    if match:
+        inner = match.group(1).strip()
+        if inner:
+            return inner
+
+    # No usable fence. Fall back to the outermost JSON object or array, which
+    # also handles a model that wrapped its answer in prose.
+    for opener, closer in (("{", "}"), ("[", "]")):
+        start = text.find(opener)
+        end = text.rfind(closer)
+        if start != -1 and end > start:
+            return text[start:end + 1].strip()
+
+    return text
 
 
 class InferenceBackend(ABC):
@@ -69,19 +102,12 @@ class InferenceBackend(ABC):
             augmented[-1] = Message(role=last.role, content=last.content + schema_instruction)
 
         last_error: Exception | None = None
+        last_content: str | None = None
         for attempt in range(1 + max_retries):
             result = await self.complete(augmented, temperature=temperature)
 
-            # Strip markdown fencing if present
-            content = result.content.strip()
-            if content.startswith("```"):
-                lines = content.split("\n")
-                # Remove first line (```json) and last line (```) only
-                if lines and lines[-1].strip().startswith("```"):
-                    lines = lines[1:-1]
-                else:
-                    lines = lines[1:]
-                content = "\n".join(lines)
+            last_content = result.content
+            content = extract_json(result.content)
 
             try:
                 return response_schema.model_validate_json(content)
@@ -98,9 +124,12 @@ class InferenceBackend(ABC):
                         ),
                     ))
 
+        # Include what the model actually said. Without it a parse failure is
+        # undiagnosable from the logs.
         raise ValueError(
-            f"Failed to parse response as {response_schema.__name__} "
-            f"after {1 + max_retries} attempts: {last_error}"
+            f"Failed to parse response as {response_schema.__name__} after "
+            f"{1 + max_retries} attempts: {last_error}\n"
+            f"Last raw response: {(last_content or '')[:600]!r}"
         )
 
     @abstractmethod

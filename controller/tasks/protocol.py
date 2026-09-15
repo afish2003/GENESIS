@@ -75,7 +75,8 @@ class ProtocolTask(Task):
     def output_schema(self) -> Type[BaseModel]:
         return ProtocolProposalOutput
 
-    def apply(self, world: WorldState, output: BaseModel, cycle: CycleState) -> str:
+    def apply(self, world: WorldState, output: BaseModel, cycle: CycleState,
+              max_tokens: int | None = None) -> str:
         assert isinstance(output, ProtocolProposalOutput)
         # Model-supplied and becomes a filename — sanitise at ingress so world
         # state, logs and evaluation all carry the same safe identifier.
@@ -84,7 +85,24 @@ class ProtocolTask(Task):
         )
         pid = output.protocol_id
 
-        if output.action.value == "create":
+        if max_tokens:
+            output.content, truncated = self.enforce_length(output.content, max_tokens)
+            if truncated:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Cycle %d: %s truncated at the configured length limit",
+                    cycle.cycle_id, pid,
+                )
+
+        existing = world.protocols.get(pid)
+
+        # A "create" naming an existing id used to replace the entry outright,
+        # losing its version, created_cycle and entire evaluation_history. A
+        # "revise" naming an id that does not exist matched neither branch, so
+        # the artifact never reached world state while PROTOCOL_PROPOSED and
+        # EVALUATION_SCORE were still logged for it. Treat the action as a hint
+        # and let the id decide, as CodeTask already did.
+        if existing is None:
             world.protocols[pid] = ProtocolDocument(
                 protocol_id=pid,
                 title=output.title,
@@ -93,12 +111,11 @@ class ProtocolTask(Task):
                 created_cycle=cycle.cycle_id,
                 last_modified_cycle=cycle.cycle_id,
             )
-        elif pid in world.protocols:
-            proto = world.protocols[pid]
-            proto.content = output.content
-            proto.title = output.title
-            proto.version += 1
-            proto.last_modified_cycle = cycle.cycle_id
+        else:
+            existing.content = output.content
+            existing.title = output.title
+            existing.version += 1
+            existing.last_modified_cycle = cycle.cycle_id
         return pid
 
     def evaluation_prompt(

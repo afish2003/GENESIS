@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from controller.logging.logger import AppendOnlyJSONLLogger
     from controller.world.state import WorldState
 
-logger = logging.getLogger(__name__)
+_logger = logging.getLogger(__name__)
 
 
 async def execute(
@@ -32,7 +32,7 @@ async def execute(
 
     scenario = cycle.current_scenario
     if scenario is None:
-        logger.warning("Scenario inject called but no scenario set for cycle %d", cycle.cycle_id)
+        _logger.warning("Scenario inject called but no scenario set for cycle %d", cycle.cycle_id)
         return events
 
     # Build scenario delivery message

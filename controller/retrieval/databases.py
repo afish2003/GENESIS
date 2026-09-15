@@ -68,15 +68,29 @@ class KnowledgeBaseManager:
         if kb_name and kb_name in self.indices:
             return self.indices[kb_name].query(query_text)
 
-        # Query all KBs and merge
-        all_results: list[RetrievalResultItem] = []
+        # Merge across KBs. Two problems the docstring claimed were handled:
+        #
+        # 1. There was no deduplication at all, so the same doc_id could occupy
+        #    several of the top-k slots.
+        # 2. Scores are not comparable between indices — an index with an
+        #    embedder returns a normalised cosine, one without returns raw BM25,
+        #    which is unbounded. Sorting them together ranked by scale rather
+        #    than relevance. Normalising per-KB before the merge makes the
+        #    comparison meaningful.
+        merged: dict[str, RetrievalResultItem] = {}
         for name, index in self.indices.items():
             results = index.query(query_text)
-            all_results.extend(results)
+            if not results:
+                continue
+            top = max(r.score for r in results) or 1.0
+            for r in results:
+                normalised = r.model_copy(update={"score": r.score / top})
+                previous = merged.get(r.doc_id)
+                if previous is None or normalised.score > previous.score:
+                    merged[r.doc_id] = normalised
 
-        # Sort by score descending and take top_k
-        all_results.sort(key=lambda r: r.score, reverse=True)
-        return all_results[:self.rerank_top_k]
+        ranked = sorted(merged.values(), key=lambda r: r.score, reverse=True)
+        return ranked[:self.rerank_top_k]
 
     @property
     def self_history_path(self) -> Path:

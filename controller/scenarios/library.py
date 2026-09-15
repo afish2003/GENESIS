@@ -18,7 +18,10 @@ def load_scenario_library(config: RunConfig) -> dict[int, ScenarioEvent]:
 
     Returns a dict mapping trigger_cycle to ScenarioEvent.
     """
-    events_dir = Path("controller/scenarios/events")
+    # Was Path("controller/scenarios/events"), relative to the process cwd, so
+    # running from anywhere but the repo root silently loaded zero events and
+    # dropped every scheduled injection. Resolve against this module instead.
+    events_dir = Path(__file__).parent / "events"
     if not events_dir.exists():
         logger.info("No scenario events directory found at %s", events_dir)
         return {}

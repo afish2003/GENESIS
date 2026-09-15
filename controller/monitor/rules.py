@@ -170,12 +170,18 @@ def memory_advancing(obs: CycleObservation) -> list[Anomaly]:
     out = []
     for agent_id, count in obs.memory_counts.items():
         before = obs.prev.memory_counts.get(agent_id, 0)
-        # A memory reset legitimately shrinks the journal; only flag stagnation.
-        if count == before and count > 0:
+        # A memory reset legitimately shrinks the journal, so a drop is not
+        # stagnation. But `count > 0` also exempted a memory phase that had
+        # never worked: stuck at zero from cycle 0, it never fired.
+        if count == before:
             out.append(Anomaly(
                 rule="memory_advancing",
                 severity=Severity.WARNING,
-                detail=f"{agent_id} memory did not grow this cycle ({count} entries)",
+                detail=(
+                    f"{agent_id} memory did not grow this cycle ({count} entries)"
+                    + (" — the memory phase has never produced anything"
+                       if count == 0 else "")
+                ),
                 cycle_id=obs.cycle_id,
                 data={"agent_id": agent_id, "count": count},
             ))

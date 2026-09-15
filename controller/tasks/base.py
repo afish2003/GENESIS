@@ -57,7 +57,8 @@ class Task(ABC):
         ...
 
     @abstractmethod
-    def apply(self, world: WorldState, output: BaseModel, cycle: CycleState) -> str:
+    def apply(self, world: WorldState, output: BaseModel, cycle: CycleState,
+              max_tokens: int | None = None) -> str:
         """Persist the produced artifact into world state.
 
         Returns the artifact id, which is logged and passed to evaluation.
@@ -102,6 +103,20 @@ class Task(ABC):
             total_score=(int, Field(..., ge=0, le=self.max_score)),
             assessment=(str, Field(..., description="Overall assessment paragraph")),
         )
+
+    @staticmethod
+    def enforce_length(content: str, max_tokens: int) -> tuple[str, bool]:
+        """Cap an artifact's length. Returns (content, was_truncated).
+
+        config.max_protocol_length_tokens was declared and never read, so an
+        agent could write an arbitrarily long document and inflate every
+        subsequent prompt for the rest of the run. Approximated at 4 chars per
+        token rather than pulling in tiktoken for a threshold check.
+        """
+        limit = max_tokens * 4
+        if len(content) <= limit:
+            return content, False
+        return content[:limit] + "\n\n[truncated at the configured length limit]", True
 
     @property
     def max_score(self) -> int:
