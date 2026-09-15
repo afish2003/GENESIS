@@ -45,15 +45,17 @@ async def execute(
     contexts: dict[str, AgentContext],
     logger: AppendOnlyJSONLLogger,
 ) -> list[EventEnvelope]:
-    """Have Axiom propose a protocol, informed by the cycle's discussion."""
+    """Have the lead agent propose a protocol, informed by the cycle's discussion."""
     events = []
 
     # Build protocol list
     active = [f"- {pid}: {p.title}" for pid, p in world.protocols.items() if not p.archived]
     protocol_list = "\n".join(active) if active else "(none yet)"
 
-    # Axiom leads protocol proposals
-    ctx = contexts["axiom"]
+    # The first agent on the roster drafts; evaluation and doctrine revision
+    # are where the others get their say.
+    lead_agent = config.agents[0]
+    ctx = contexts[lead_agent]
     messages = [
         ctx.build_system_message(),
     ]
@@ -63,7 +65,7 @@ async def execute(
     messages.append(Message(
         role="user",
         content=PROTOCOL_PROMPT.format(
-            partner_name="Flux",
+            partner_name=config.partner_names(lead_agent),
             protocol_list=protocol_list,
         ),
     ))
@@ -74,7 +76,7 @@ async def execute(
         temperature=config.temperature_discussion,
         max_retries=config.max_retries,
     )
-    output.proposing_agent = "axiom"
+    output.proposing_agent = lead_agent
 
     # protocol_id is model-supplied and becomes a filename in
     # world/sandbox/protocols/. Sanitise here, at ingress, so world state,
@@ -108,7 +110,7 @@ async def execute(
         run_id=config.run_id,
         condition=config.condition.value,
         cycle_id=cycle.cycle_id,
-        agent_id="axiom",
+        agent_id=lead_agent,
         payload=output.model_dump(),
     ))
 

@@ -9,7 +9,7 @@ from typing import Optional
 
 import yaml
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class Condition(str, Enum):
@@ -88,6 +88,19 @@ class RunConfig(BaseModel):
     # Run identity
     run_id: str = Field(..., description="Unique run identifier, e.g. RUN_001")
     condition: Condition = Field(..., description="Experimental condition")
+
+    # The agent roster. Single source of truth — the controller iterates this
+    # rather than a literal, so a run can have two agents, three, or one.
+    #
+    # Note what this does NOT yet generalise: prompt sources in prompts_src/
+    # are per-named-agent, so adding a roster entry needs a matching
+    # <name>_system.md and identity_<name>.md. The loop is roster-driven; the
+    # prompt library is not yet.
+    agents: list[str] = Field(
+        default_factory=lambda: ["axiom", "flux"],
+        min_length=1,
+        description="Ordered agent ids. Order is stable and determines turn order.",
+    )
 
     # Cycle parameters
     total_cycles: int = Field(default=100, ge=1)
@@ -208,6 +221,34 @@ class RunConfig(BaseModel):
     prompts_dir: Path = Field(default=Path("./prompts"))
     knowledge_bases_dir: Path = Field(default=Path("./knowledge_bases"))
 
+    @field_validator("agents")
+    @classmethod
+    def _validate_roster(cls, v: list[str]) -> list[str]:
+        if len(set(v)) != len(v):
+            raise ValueError(f"agent ids must be unique, got {v}")
+        for name in v:
+            if not name or not name.replace("_", "").isalnum() or name != name.lower():
+                raise ValueError(
+                    f"agent id {name!r} must be lowercase alphanumeric "
+                    f"(underscores allowed) — it becomes a filename"
+                )
+        return v
+
+    def display_name(self, agent_id: str) -> str:
+        """Human-facing name used in prompts addressed to a partner."""
+        return agent_id.replace("_", " ").title()
+
+    def partners(self, agent_id: str) -> list[str]:
+        """Every other agent on the roster, in roster order."""
+        return [a for a in self.agents if a != agent_id]
+
+    def partner_names(self, agent_id: str) -> str:
+        """Comma-joined display names of an agent's partners."""
+        names = [self.display_name(a) for a in self.partners(agent_id)]
+        if len(names) <= 1:
+            return names[0] if names else ""
+        return ", ".join(names[:-1]) + f" and {names[-1]}"
+
     @model_validator(mode="after")
     def _reject_conflicting_prompt_selection(self) -> "RunConfig":
         """Refuse a run whose prompt dimensions would be silently ignored.
@@ -283,6 +324,7 @@ def load_config(
         "REQUEST_TIMEOUT": "request_timeout",
         "FRAMING": "framing",
         "IDENTITY_SEED": "identity_seed",
+        "AGENTS": "agents",
         "SANDBOX_BACKEND": "sandbox_backend",
         "INDEPENDENT_PROPOSALS": "independent_proposals",
         "DOCTRINE_APPLY_MODE": "doctrine_apply_mode",

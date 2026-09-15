@@ -57,8 +57,8 @@ async def execute(
         )
 
     # Alternating turns: Axiom, Flux, Axiom, Flux, ...
-    agents = ["axiom", "flux"]
-    partner_names = {"axiom": "Flux", "flux": "Axiom"}
+    agents = list(config.agents)
+    partner_names = {a: config.partner_names(a) for a in agents}
     last_message: dict[str, str] = {}  # agent_id -> their last message
 
     for turn_idx in range(total_turns):

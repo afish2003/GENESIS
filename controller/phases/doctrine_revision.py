@@ -179,8 +179,11 @@ async def execute(
         for name, doc in sorted(world.doctrine.items())
     )
 
-    # Each agent can propose (Axiom first)
-    for proposer_id, voter_id in [("axiom", "flux"), ("flux", "axiom")]:
+    # Each agent proposes in roster order; every other agent votes on it.
+    # Mutual approval generalises to unanimity: with two agents this is exactly
+    # the previous behaviour, with three or more a single objection blocks the
+    # revision, which is what "requires mutual approval" means for a roster.
+    for proposer_id in config.agents:
         proposer_ctx = contexts[proposer_id]
         messages = [
             proposer_ctx.build_system_message(),
@@ -223,126 +226,135 @@ async def execute(
             payload=proposal.model_dump(),
         ))
 
-        # Get vote from the other agent
-        voter_ctx = contexts[voter_id]
-        partner_names = {"axiom": "Axiom", "flux": "Flux"}
-        vote_messages = [
-            voter_ctx.build_system_message(),
-        ]
-        for msg in voter_ctx.get_discussion_messages():
-            vote_messages.append(msg)
-        vote_messages.append(Message(
-            role="user",
-            content=DOCTRINE_VOTE_PROMPT.format(
-                proposer_name=partner_names[proposer_id],
-                target_document=proposal.target_document,
-                proposed_diff=proposal.proposed_diff,
-                rationale=proposal.rationale,
-                revised_content=(proposal.revised_content or "(none supplied)")[:4000],
-            ),
-        ))
-
-        vote = await backend.complete_structured(
-            messages=vote_messages,
-            response_schema=DoctrineVote,
-            temperature=config.temperature_structured,
-            max_retries=config.max_retries,
-        )
-        vote.agent_id = voter_id
-
-        if vote.vote == "approve":
-            # Resolve before logging, so the approval event records whether the
-            # revision was actually applied. Doctrine evolution is a primary
-            # dependent variable; an approval that silently fails to land would
-            # corrupt the measurement rather than crash.
-            requested = proposal.target_document
-            resolved = resolve_doctrine_target(requested, world.doctrine)
-
-            events.append(EventEnvelope(
-                event_type=EventType.DOCTRINE_APPROVED,
-                run_id=config.run_id,
-                condition=config.condition.value,
-                cycle_id=cycle.cycle_id,
-                agent_id=voter_id,
-                payload={
-                    "proposal": proposal.model_dump(),
-                    "vote": vote.model_dump(),
-                    "applied": resolved is not None,
-                    "requested_document": requested,
-                    "resolved_document": resolved,
-                },
+        # Every other agent votes. Mutual approval means unanimity: one
+        # rejection blocks the revision, which is the two-agent behaviour
+        # generalised rather than changed.
+        votes: list[DoctrineVote] = []
+        for voter_id in config.partners(proposer_id):
+            voter_ctx = contexts[voter_id]
+            vote_messages = [voter_ctx.build_system_message()]
+            for msg in voter_ctx.get_discussion_messages():
+                vote_messages.append(msg)
+            vote_messages.append(Message(
+                role="user",
+                content=DOCTRINE_VOTE_PROMPT.format(
+                    proposer_name=config.display_name(proposer_id),
+                    target_document=proposal.target_document,
+                    proposed_diff=proposal.proposed_diff,
+                    rationale=proposal.rationale,
+                    revised_content=(proposal.revised_content or "(none supplied)")[:4000],
+                ),
             ))
 
-            if resolved is None:
-                _logger.warning(
-                    "Cycle %d: approved doctrine revision targets unknown document %r; "
-                    "no change applied. Known documents: %s",
-                    cycle.cycle_id,
-                    requested,
-                    sorted(world.doctrine.keys()),
-                )
-                events.append(EventEnvelope(
-                    event_type=EventType.NOTABLE_EVENT,
-                    run_id=config.run_id,
-                    condition=config.condition.value,
-                    cycle_id=cycle.cycle_id,
-                    agent_id=proposer_id,
-                    payload={
-                        "kind": "doctrine_target_unresolved",
-                        "requested_document": requested,
-                        "known_documents": sorted(world.doctrine.keys()),
-                        "detail": "Approved revision was discarded — target did not "
-                                  "match any doctrine document.",
-                    },
-                ))
-            else:
-                if resolved != requested:
-                    _logger.info(
-                        "Cycle %d: doctrine target %r resolved to %r",
-                        cycle.cycle_id, requested, resolved,
-                    )
-                doc = world.doctrine[resolved]
-                applied_text, how, why = apply_revision(
-                    doc.content, proposal, cycle.cycle_id, proposer_id,
-                    mode=config.doctrine_apply_mode,
-                )
-                if applied_text is None:
-                    _logger.warning(
-                        "Cycle %d: revision to %s not applied — %s",
-                        cycle.cycle_id, resolved, why,
-                    )
-                    events.append(EventEnvelope(
-                        event_type=EventType.NOTABLE_EVENT,
-                        run_id=config.run_id,
-                        condition=config.condition.value,
-                        cycle_id=cycle.cycle_id,
-                        agent_id=proposer_id,
-                        payload={
-                            "kind": "doctrine_revision_rejected_by_controller",
-                            "document": resolved,
-                            "reason": why,
-                            "detail": "Approved revision could not be applied safely.",
-                        },
-                    ))
-                else:
-                    doc.content = applied_text
-                    doc.last_modified_cycle = cycle.cycle_id
-                    doc.version += 1
-                    _logger.info(
-                        "Cycle %d: %s v%d updated via %s (%d -> %d chars)",
-                        cycle.cycle_id, resolved, doc.version, how,
-                        len(proposal.revised_content or ""), len(applied_text),
-                    )
-        else:
+            vote = await backend.complete_structured(
+                messages=vote_messages,
+                response_schema=DoctrineVote,
+                temperature=config.temperature_structured,
+                max_retries=config.max_retries,
+            )
+            vote.agent_id = voter_id
+            votes.append(vote)
+
+        approved = bool(votes) and all(v.vote == "approve" for v in votes)
+        vote_payload = [v.model_dump() for v in votes]
+        dissenters = [v.agent_id for v in votes if v.vote != "approve"]
+
+        if not approved:
             events.append(EventEnvelope(
                 event_type=EventType.DOCTRINE_REJECTED,
                 run_id=config.run_id,
                 condition=config.condition.value,
                 cycle_id=cycle.cycle_id,
-                agent_id=voter_id,
+                agent_id=dissenters[0] if dissenters else None,
                 payload={
                     "proposal": proposal.model_dump(),
-                    "vote": vote.model_dump(),
+                    "votes": vote_payload,
+                    "dissenting_agents": dissenters,
+                },
+            ))
+            continue
+
+        # Resolve before logging, so the approval event records whether the
+        # revision was actually applied. Doctrine evolution is a primary
+        # dependent variable; an approval that silently fails to land would
+        # corrupt the measurement rather than crash.
+        requested = proposal.target_document
+        resolved = resolve_doctrine_target(requested, world.doctrine)
+        applied_ok = False
+        apply_detail = ""
+
+        if resolved is not None:
+            doc = world.doctrine[resolved]
+            applied_text, how, why = apply_revision(
+                doc.content, proposal, cycle.cycle_id, proposer_id,
+                mode=config.doctrine_apply_mode,
+            )
+            if applied_text is not None:
+                doc.content = applied_text
+                doc.last_modified_cycle = cycle.cycle_id
+                doc.version += 1
+                applied_ok = True
+                if resolved != requested:
+                    _logger.info("Cycle %d: doctrine target %r resolved to %r",
+                                 cycle.cycle_id, requested, resolved)
+                _logger.info(
+                    "Cycle %d: %s v%d updated via %s (%d -> %d chars)",
+                    cycle.cycle_id, resolved, doc.version, how,
+                    len(proposal.revised_content or ""), len(applied_text),
+                )
+            else:
+                apply_detail = why
+
+        events.append(EventEnvelope(
+            event_type=EventType.DOCTRINE_APPROVED,
+            run_id=config.run_id,
+            condition=config.condition.value,
+            cycle_id=cycle.cycle_id,
+            agent_id=proposer_id,
+            payload={
+                "proposal": proposal.model_dump(),
+                "votes": vote_payload,
+                "approving_agents": [v.agent_id for v in votes],
+                "applied": applied_ok,
+                "requested_document": requested,
+                "resolved_document": resolved,
+            },
+        ))
+
+        if resolved is None:
+            _logger.warning(
+                "Cycle %d: approved doctrine revision targets unknown document %r; "
+                "no change applied. Known documents: %s",
+                cycle.cycle_id, requested, sorted(world.doctrine.keys()),
+            )
+            events.append(EventEnvelope(
+                event_type=EventType.NOTABLE_EVENT,
+                run_id=config.run_id,
+                condition=config.condition.value,
+                cycle_id=cycle.cycle_id,
+                agent_id=proposer_id,
+                payload={
+                    "kind": "doctrine_target_unresolved",
+                    "requested_document": requested,
+                    "known_documents": sorted(world.doctrine.keys()),
+                    "detail": "Approved revision was discarded — target did not "
+                              "match any doctrine document.",
+                },
+            ))
+        elif not applied_ok:
+            _logger.warning("Cycle %d: revision to %s not applied — %s",
+                            cycle.cycle_id, resolved, apply_detail)
+            events.append(EventEnvelope(
+                event_type=EventType.NOTABLE_EVENT,
+                run_id=config.run_id,
+                condition=config.condition.value,
+                cycle_id=cycle.cycle_id,
+                agent_id=proposer_id,
+                payload={
+                    "kind": "doctrine_revision_rejected_by_controller",
+                    "document": resolved,
+                    "reason": apply_detail,
+                    "detail": "Approved revision could not be applied safely.",
                 },
             ))
 

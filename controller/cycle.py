@@ -130,7 +130,7 @@ class CycleOrchestrator:
         # Handle memory reset for MEM_RESET condition
         if self.config.should_reset_memory(cycle_id):
             logger.info("Memory reset at cycle %d", cycle_id)
-            for agent_id in ["axiom", "flux"]:
+            for agent_id in self.config.agents:
                 self.world.reset_memory(
                     agent_id, cycle_id, self.config.memory_reset_bootstrap
                 )
@@ -141,7 +141,7 @@ class CycleOrchestrator:
             removed = self.kb_manager.clear_self_history() if self.kb_manager else 0
             self._log_event(EventType.NOTABLE_EVENT, cycle_id, payload={
                 "kind": "memory_reset",
-                "agents": ["axiom", "flux"],
+                "agents": list(self.config.agents),
                 "self_history_documents_cleared": removed,
             })
 
@@ -275,7 +275,7 @@ class CycleOrchestrator:
             name: doc.content for name, doc in self.world.doctrine.items()
         }
         contexts = {}
-        for agent_id in ["axiom", "flux"]:
+        for agent_id in self.config.agents:
             contexts[agent_id] = build_agent_context(
                 agent_id=agent_id,
                 prompts_dir=self.config.prompts_dir,

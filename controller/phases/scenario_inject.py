@@ -43,7 +43,7 @@ async def execute(
     )
 
     # Deliver to appropriate agents
-    targets = ["axiom", "flux"] if scenario.delivery_target == "both" else [scenario.delivery_target]
+    targets = list(config.agents) if scenario.delivery_target == "both" else [scenario.delivery_target]
     for agent_id in targets:
         if agent_id in contexts:
             contexts[agent_id].add_discussion_turn("user", scenario_text)

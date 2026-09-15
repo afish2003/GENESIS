@@ -44,9 +44,9 @@ async def execute(
     # Load memory summarizer prompt
     summarizer_prompt = load_system_prompt(config.prompts_dir, "memory_summarizer.md")
 
-    agent_names = {"axiom": "Axiom", "flux": "Flux"}
+    agent_names = {a: config.display_name(a) for a in config.agents}
 
-    for agent_id in ["axiom", "flux"]:
+    for agent_id in config.agents:
         ctx = contexts[agent_id]
 
         # Build transcript from discussion history

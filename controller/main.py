@@ -150,7 +150,7 @@ async def run(argv: list[str] | None = None) -> None:
     if start_cycle == 0:
         initialize_world(config.world_template_dir, config.world_dir)
 
-    world = WorldState(config.world_dir)
+    world = WorldState(config.world_dir, agents=config.agents)
 
     # Load scenario library
     from controller.scenarios.library import load_scenario_library

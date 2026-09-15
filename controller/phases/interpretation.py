@@ -55,7 +55,7 @@ async def execute(
         evaluation_text += f"  - {dim}: {score}/10 — {justification}\n"
     evaluation_text += f"\nAssessment: {eval_data.get('assessment', '')}"
 
-    for agent_id in ["axiom", "flux"]:
+    for agent_id in config.agents:
         ctx = contexts[agent_id]
         messages = [
             ctx.build_system_message(),

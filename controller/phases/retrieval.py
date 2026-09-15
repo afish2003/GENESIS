@@ -42,7 +42,7 @@ async def execute(
     """Gather retrieval queries from both agents and execute them."""
     events = []
 
-    for agent_id in ["axiom", "flux"]:
+    for agent_id in config.agents:
         ctx = contexts[agent_id]
         messages = [
             ctx.build_system_message(),

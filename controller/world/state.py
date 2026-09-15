@@ -38,8 +38,16 @@ class WorldState:
     and produces diff events for the logger.
     """
 
-    def __init__(self, world_dir: Path) -> None:
+    def __init__(self, world_dir: Path, agents: list[str] | None = None) -> None:
+        """
+        Args:
+            world_dir: the working world directory.
+            agents: the run's agent roster. Defaults to the v1 pair so existing
+                callers and tests keep working; the controller passes
+                config.agents so a run is never tied to two named agents.
+        """
         self.world_dir = world_dir
+        self.agents = list(agents) if agents else ["axiom", "flux"]
 
         # Doctrine documents
         self.doctrine: dict[str, DoctrineDocument] = {}
@@ -48,10 +56,7 @@ class WorldState:
         self.identities: dict[str, IdentityStatement] = {}
 
         # Memory journals (agent_id -> list of entries)
-        self.memory: dict[str, list[MemoryEntry]] = {
-            "axiom": [],
-            "flux": [],
-        }
+        self.memory: dict[str, list[MemoryEntry]] = {a: [] for a in self.agents}
 
         # Protocol documents
         self.protocols: dict[str, ProtocolDocument] = {}
@@ -139,7 +144,7 @@ class WorldState:
         doctrine_dir = self.world_dir / "doctrine"
         if not doctrine_dir.exists():
             return
-        for agent_id in ["axiom", "flux"]:
+        for agent_id in self.agents:
             filepath = doctrine_dir / f"identity_{agent_id}.md"
             if filepath.exists():
                 self.identities[agent_id] = IdentityStatement(
@@ -176,7 +181,7 @@ class WorldState:
         memory_dir = self.world_dir / "memory"
         if not memory_dir.exists():
             return
-        for agent_id in ["axiom", "flux"]:
+        for agent_id in self.agents:
             filepath = memory_dir / f"memory_{agent_id}.jsonl"
             if filepath.exists():
                 entries = []
@@ -190,7 +195,7 @@ class WorldState:
         memory_dir = self.world_dir / "memory"
         memory_dir.mkdir(parents=True, exist_ok=True)
 
-        for agent_id in ["axiom", "flux"]:
+        for agent_id in self.agents:
             filepath = memory_dir / f"memory_{agent_id}.jsonl"
             content = "\n".join(
                 entry.model_dump_json() for entry in self.memory[agent_id]

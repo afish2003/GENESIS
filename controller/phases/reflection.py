@@ -39,7 +39,7 @@ async def execute(
     """Run individual reflection for both agents sequentially (Axiom first)."""
     events = []
 
-    for agent_id in ["axiom", "flux"]:
+    for agent_id in config.agents:
         ctx = contexts[agent_id]
         messages = [
             ctx.build_system_message(),

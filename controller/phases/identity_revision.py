@@ -41,7 +41,7 @@ async def execute(
     """Each agent independently revises their identity statement."""
     events = []
 
-    for agent_id in ["axiom", "flux"]:
+    for agent_id in config.agents:
         ctx = contexts[agent_id]
         current_identity = world.identities[agent_id].content
 

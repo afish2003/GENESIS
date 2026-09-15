@@ -1,0 +1,5 @@
+# Three-agent roster. Mutual approval becomes unanimity: any one agent can
+# block a doctrine revision.
+agents: [axiom, flux, vertex]
+framing: disclosed
+identity_seed: prescribed
