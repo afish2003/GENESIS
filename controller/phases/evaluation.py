@@ -31,7 +31,7 @@ async def execute(
     logger: AppendOnlyJSONLLogger,
 ) -> list[EventEnvelope]:
     """Score this cycle's task artifact with a fresh-context evaluator."""
-    events = []
+    events = cycle.pending_events
     task = create_task(config)
 
     if cycle.proposed_protocol is None:

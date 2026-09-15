@@ -39,7 +39,7 @@ async def execute(
     logger: AppendOnlyJSONLLogger,
 ) -> list[EventEnvelope]:
     """Summarize the cycle for each agent's memory journal."""
-    events = []
+    events = cycle.pending_events
 
     # Load memory summarizer prompt
     summarizer_prompt = load_system_prompt(config.run_prompts_dir, "memory_summarizer.md")

@@ -37,7 +37,7 @@ async def execute(
     logger: AppendOnlyJSONLLogger,
 ) -> list[EventEnvelope]:
     """Both agents interpret the evaluation results."""
-    events = []
+    events = cycle.pending_events
 
     if cycle.evaluation_result is None:
         return events

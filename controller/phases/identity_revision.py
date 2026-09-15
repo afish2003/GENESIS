@@ -39,7 +39,7 @@ async def execute(
     logger: AppendOnlyJSONLLogger,
 ) -> list[EventEnvelope]:
     """Each agent independently revises their identity statement."""
-    events = []
+    events = cycle.pending_events
 
     for agent_id in config.agents:
         ctx = contexts[agent_id]

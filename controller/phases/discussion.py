@@ -45,7 +45,7 @@ async def execute(
     logger: AppendOnlyJSONLLogger,
 ) -> list[EventEnvelope]:
     """Run a round-robin discussion across the roster."""
-    events = []
+    events = cycle.pending_events
     turns_per_agent = config.discussion_turns(cycle.scenario_active)
     agents = list(config.agents)
     total_turns = turns_per_agent * len(agents)

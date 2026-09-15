@@ -28,7 +28,7 @@ async def execute(
     logger: AppendOnlyJSONLLogger,
 ) -> list[EventEnvelope]:
     """Inject a scenario event into agent contexts."""
-    events = []
+    events = cycle.pending_events
 
     scenario = cycle.current_scenario
     if scenario is None:

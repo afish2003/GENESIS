@@ -357,3 +357,121 @@ class TestRetrievalReachesAgents:
         assert any(marker in text for text in seen), (
             "retrieved document never appeared in any prompt sent to the model"
         )
+
+
+# ---------------------------------------------------------------------------
+# Failure visibility
+# ---------------------------------------------------------------------------
+
+class TestPhaseFailureIsVisible:
+    """A phase that raises must be loud in the data.
+
+    _run_phase catches every exception so one bad model response cannot end a
+    100-cycle run. That is right, but it previously meant a phase could fail
+    every cycle while the run reported success: PHASE_END was logged
+    unconditionally with no status, so the watchdog rule written to detect a
+    swallowed failure could never fire.
+    """
+
+    def _run_with_failing_phase(self, tmp_path, phase="reflection", after=0):
+        from controller.phases import sequence as seq
+
+        config = make_config(tmp_path, total_cycles=1)
+        prepared = prepare_run(config, load_embeddings=False)
+        prepared.backend.field_hints.update(
+            {"revised_content": MOCK_REVISED_DOCTRINE}
+        )
+
+        calls = {"n": 0}
+        original = dict(seq.ALL_PHASES)[phase].fn
+
+        async def exploding(**kwargs):
+            calls["n"] += 1
+            if calls["n"] > after:
+                raise RuntimeError("deliberate phase failure")
+            return await original(**kwargs)
+
+        orch = CycleOrchestrator(
+            config=prepared.config, backend=prepared.backend, world=prepared.world,
+            log=prepared.log, scenario_library=prepared.scenario_library,
+            kb_manager=prepared.kb_manager,
+        )
+        orch.sequence = tuple(
+            seq.Phase(p.name, exploding if p.name == phase else p.fn,
+                      p.needs_ctx, p.when, p.builds_ctx)
+            for p in orch.sequence
+        )
+        asyncio.run(orch.run_all_cycles(start_cycle=0))
+        return config, read_events(config)
+
+    def test_run_survives_a_failing_phase(self, tmp_path):
+        config, events = self._run_with_failing_phase(tmp_path)
+        assert len(of_type(events, "CYCLE_END")) == 1
+
+    def test_phase_error_is_recorded(self, tmp_path):
+        config, events = self._run_with_failing_phase(tmp_path)
+        errors = [e for e in events if e.get("payload", {}).get("type") == "PHASE_ERROR"]
+        assert len(errors) == 1
+        assert errors[0]["payload"]["phase"] == "reflection"
+        assert errors[0]["payload"]["error_type"] == "RuntimeError"
+
+    def test_phase_end_carries_error_status(self, tmp_path):
+        """PHASE_END used to be indistinguishable between success and failure."""
+        config, events = self._run_with_failing_phase(tmp_path)
+        ends = {e["payload"]["phase"]: e["payload"].get("status")
+                for e in of_type(events, "PHASE_END")}
+        assert ends["reflection"] == "error"
+        assert ends["persist_state"] == "ok"
+
+    def test_watchdog_raises_a_critical(self, tmp_path):
+        """The rule that could never fire before."""
+        config, events = self._run_with_failing_phase(tmp_path)
+        critical = [a for a in of_type(events, "ANOMALY")
+                    if a["payload"]["severity"] == "CRITICAL"]
+        assert critical, "a phase raised and the watchdog reported nothing"
+        assert any(a["payload"]["rule"] == "phase_errors" for a in critical)
+
+    def test_partial_events_are_kept_and_marked(self, tmp_path):
+        """A phase that mutates world state then fails must not lose its events.
+
+        doctrine_revision applies an approved revision, then raises while the
+        next agent drafts. The mutation persists; discarding the events left
+        doctrine_diffs.jsonl showing a document that changed with no proposal
+        or vote behind it.
+
+        The failure is injected into the BACKEND after N calls so the phase gets
+        part-way through rather than dying at entry.
+        """
+        config = make_config(tmp_path, total_cycles=1)
+        prepared = prepare_run(config, load_embeddings=False)
+        prepared.backend.field_hints.update({"revised_content": MOCK_REVISED_DOCTRINE})
+
+        original = prepared.backend.complete
+        # Fail on the doctrine VOTE call. By then DOCTRINE_PROPOSED has already
+        # been appended, so the phase dies holding events it produced.
+        vote_marker = "has proposed a doctrine revision"
+
+        async def failing(messages, temperature=0.7):
+            if any(vote_marker in m.content for m in messages):
+                raise RuntimeError("deliberate mid-phase failure")
+            return await original(messages, temperature=temperature)
+
+        prepared.backend.complete = failing  # type: ignore[method-assign]
+
+        orch = CycleOrchestrator(
+            config=prepared.config, backend=prepared.backend, world=prepared.world,
+            log=prepared.log, scenario_library=prepared.scenario_library,
+            kb_manager=prepared.kb_manager,
+        )
+        asyncio.run(orch.run_all_cycles(start_cycle=0))
+        events = read_events(config)
+
+        errors = [e for e in events if e.get("payload", {}).get("type") == "PHASE_ERROR"]
+        assert errors, "no phase reported a failure"
+
+        kept = [e["payload"]["partial_events_kept"] for e in errors]
+        partial = [e for e in events if e.get("payload", {}).get("partial")]
+        assert any(k > 0 for k in kept) or partial, (
+            f"a phase failed part-way and every event it had produced was lost "
+            f"(partial_events_kept={kept})"
+        )

@@ -20,6 +20,8 @@ from controller.monitor.rules import (
     evaluation_occurred,
     memory_advancing,
     phase_completion,
+    phase_end_status,
+    phase_errors,
     sandbox_escape_attempt,
 )
 from controller.monitor.watchdog import Watchdog
@@ -59,12 +61,52 @@ class TestHealthyCycleIsQuiet:
 
 
 class TestIntegrityRules:
-    def test_phase_completion_detects_swallowed_failure(self):
+    def test_phase_completion_detects_a_missing_end_marker(self):
+        """Structural only. It cannot see a phase that RAISED — _run_phase logs
+        PHASE_END on every path — which is what phase_errors covers. This test
+        used to claim otherwise while hand-building an event list production
+        could never emit."""
         events = [{"event_type": "PHASE_START", "payload": {}}] * 13 + \
                  [{"event_type": "PHASE_END", "payload": {}}] * 12
         found = phase_completion(obs(events=events))
         assert len(found) == 1
         assert found[0].severity is Severity.CRITICAL
+
+    def test_phase_completion_quiet_when_a_phase_merely_errored(self):
+        """Balanced counts with an error present: phase_errors owns this case."""
+        events = ([{"event_type": "PHASE_START", "payload": {}}] * 13
+                  + [{"event_type": "PHASE_END", "payload": {"status": "error"}}] * 13)
+        assert phase_completion(obs(events=events)) == []
+
+    def test_phase_errors_fires_on_a_swallowed_exception(self):
+        events = [{
+            "event_type": "NOTABLE_EVENT",
+            "payload": {"type": "PHASE_ERROR", "phase": "reflection",
+                        "error_type": "RuntimeError", "error": "boom",
+                        "partial_events_kept": 2},
+        }]
+        found = phase_errors(obs(events=events))
+        assert len(found) == 1
+        assert found[0].severity is Severity.CRITICAL
+        assert "reflection" in found[0].detail and "RuntimeError" in found[0].detail
+
+    def test_phase_errors_quiet_on_a_clean_cycle(self):
+        assert phase_errors(obs()) == []
+
+    def test_phase_end_status_cross_check(self):
+        """PHASE_END says error but no PHASE_ERROR was logged."""
+        events = [{"event_type": "PHASE_END",
+                   "payload": {"phase": "retrieval", "status": "error"}}]
+        found = phase_end_status(obs(events=events))
+        assert len(found) == 1 and "retrieval" in found[0].detail
+
+    def test_phase_end_status_quiet_when_both_present(self):
+        events = [
+            {"event_type": "PHASE_END", "payload": {"phase": "retrieval", "status": "error"}},
+            {"event_type": "NOTABLE_EVENT",
+             "payload": {"type": "PHASE_ERROR", "phase": "retrieval"}},
+        ]
+        assert phase_end_status(obs(events=events)) == []
 
     def test_doctrine_applied_detects_discarded_revision(self):
         events = [{

@@ -24,11 +24,12 @@ async def execute(
     logger: AppendOnlyJSONLLogger,
 ) -> list[EventEnvelope]:
     """Save all world state artifacts, then index this cycle into self-history."""
-    events = world.save(
+    cycle.pending_events.extend(world.save(
         run_id=config.run_id,
         condition=config.condition.value,
         cycle_id=cycle.cycle_id,
-    )
+    ))
+    events = cycle.pending_events
 
     _index_self_history(world, cycle)
     return events

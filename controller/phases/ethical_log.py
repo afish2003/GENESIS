@@ -41,7 +41,7 @@ async def execute(
     logger: AppendOnlyJSONLLogger,
 ) -> list[EventEnvelope]:
     """Each agent logs ethical tensions from this cycle."""
-    events = []
+    events = cycle.pending_events
 
     for agent_id in config.agents:
         ctx = contexts[agent_id]

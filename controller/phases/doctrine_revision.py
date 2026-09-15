@@ -169,7 +169,7 @@ async def execute(
     logger: AppendOnlyJSONLLogger,
 ) -> list[EventEnvelope]:
     """Handle doctrine revision proposals and mutual approval voting."""
-    events = []
+    events = cycle.pending_events
 
     doc_names = ", ".join(sorted(world.doctrine.keys()))
     # The full text, not a 100-character preview. An agent cannot rewrite a

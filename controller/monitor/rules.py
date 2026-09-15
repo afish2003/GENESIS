@@ -67,16 +67,77 @@ def _count(obs: CycleObservation, event_type: str) -> int:
 # ---------------------------------------------------------------------------
 
 def phase_completion(obs: CycleObservation) -> list[Anomaly]:
-    """Every started phase must finish. A gap means a phase raised and was swallowed."""
+    """Every started phase must reach its end marker.
+
+    Structural only. It cannot detect a phase that RAISED — _run_phase logs
+    PHASE_END on every path — which is what `phase_errors` is for. This rule
+    used to carry that job and could never fire.
+    """
     starts = _count(obs, "PHASE_START")
     ends = _count(obs, "PHASE_END")
     if starts != ends:
         return [Anomaly(
             rule="phase_completion",
             severity=Severity.CRITICAL,
-            detail=f"{starts} phases started but {ends} finished — a phase failed silently",
+            detail=f"{starts} phases started but {ends} reached an end marker",
             cycle_id=obs.cycle_id,
             data={"started": starts, "ended": ends},
+        )]
+    return []
+
+
+def phase_errors(obs: CycleObservation) -> list[Anomaly]:
+    """A phase raised and was swallowed by _run_phase.
+
+    The controller catches every phase exception so one bad model response
+    cannot end a 100-cycle run. That is the right call, but it means a phase
+    can fail every cycle while the run reports success. This is the rule that
+    notices.
+    """
+    out = []
+    for e in obs.events:
+        payload = e.get("payload", {})
+        if payload.get("type") != "PHASE_ERROR":
+            continue
+        out.append(Anomaly(
+            rule="phase_errors",
+            severity=Severity.CRITICAL,
+            detail=(
+                f"Phase {payload.get('phase')!r} raised "
+                f"{payload.get('error_type', 'an exception')}: "
+                f"{str(payload.get('error', ''))[:160]}"
+            ),
+            cycle_id=obs.cycle_id,
+            data={
+                "phase": payload.get("phase"),
+                "error_type": payload.get("error_type"),
+                "partial_events_kept": payload.get("partial_events_kept"),
+            },
+        ))
+    return out
+
+
+def phase_end_status(obs: CycleObservation) -> list[Anomaly]:
+    """Cross-check: PHASE_END marked error without a matching PHASE_ERROR."""
+    errored = {
+        e["payload"].get("phase")
+        for e in obs.events
+        if e.get("event_type") == "PHASE_END"
+        and e.get("payload", {}).get("status") == "error"
+    }
+    reported = {
+        e["payload"].get("phase")
+        for e in obs.events
+        if e.get("payload", {}).get("type") == "PHASE_ERROR"
+    }
+    missing = errored - reported
+    if missing:
+        return [Anomaly(
+            rule="phase_end_status",
+            severity=Severity.WARNING,
+            detail=f"Phases ended with status=error but logged no PHASE_ERROR: {sorted(missing)}",
+            cycle_id=obs.cycle_id,
+            data={"phases": sorted(missing)},
         )]
     return []
 
@@ -243,6 +304,8 @@ def evaluation_occurred(obs: CycleObservation) -> list[Anomaly]:
 
 ALL_RULES: list[Rule] = [
     phase_completion,
+    phase_errors,
+    phase_end_status,
     doctrine_applied,
     memory_advancing,
     sandbox_escape_attempt,

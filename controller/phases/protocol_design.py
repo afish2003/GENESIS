@@ -33,7 +33,7 @@ async def execute(
     logger: AppendOnlyJSONLLogger,
 ) -> list[EventEnvelope]:
     """Have the lead agent produce the task artifact for this cycle."""
-    events: list[EventEnvelope] = []
+    events: list[EventEnvelope] = cycle.pending_events
     task = create_task(config)
 
     # The first agent on the roster drafts; the others get their say in

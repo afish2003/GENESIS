@@ -54,6 +54,15 @@ class CycleState:
     scenario_library: dict[int, ScenarioEvent] = field(default_factory=dict)
     kb_manager: Optional[KnowledgeBaseManager] = field(default=None)
     retrieval_results: dict[str, list] = field(default_factory=dict)  # agent_id -> results
+    #: Events produced by the phase currently executing. Phases alias their
+    #: local `events` list to this, so the orchestrator still holds them when a
+    #: phase raises part-way through. Without it, a phase that mutated world
+    #: state and then failed left the mutation on disk with no event explaining
+    #: it — doctrine_diffs.jsonl showing a document that changed with no
+    #: proposal or vote behind it.
+    pending_events: list[EventEnvelope] = field(default_factory=list)
+    #: Phases that raised this cycle. persist_state and the watchdog consult it.
+    failed_phases: list[str] = field(default_factory=list)
     proposed_protocol: Optional[dict] = None
     evaluation_result: Optional[dict] = None
     events: list[EventEnvelope] = field(default_factory=list)
@@ -182,10 +191,12 @@ class CycleOrchestrator:
     ) -> None:
         """Run a single phase with logging."""
         self._log_event(EventType.PHASE_START, cycle_id, payload={"phase": phase_name})
+        cycle.pending_events.clear()
+        failure: Exception | None = None
 
         try:
             if contexts is not None:
-                events = await phase_fn(
+                await phase_fn(
                     config=self.config,
                     backend=self.backend,
                     world=self.world,
@@ -194,27 +205,50 @@ class CycleOrchestrator:
                     logger=self.logger,
                 )
             else:
-                events = await phase_fn(
+                await phase_fn(
                     config=self.config,
                     backend=self.backend,
                     world=self.world,
                     cycle=cycle,
                     logger=self.logger,
                 )
-
-            if events:
-                self.logger.log_events(events)
-                self._cycle_events.extend(events)
-
         except Exception as e:
-            logger.error("Phase %s failed at cycle %d: %s", phase_name, cycle_id, e, exc_info=True)
+            failure = e
+            logger.error("Phase %s failed at cycle %d: %s",
+                         phase_name, cycle_id, e, exc_info=True)
+
+        # Log whatever the phase produced, including when it raised part-way.
+        # Phases mutate world state as they go, so discarding their events left
+        # artifacts that changed with nothing in the logs to explain them.
+        if cycle.pending_events:
+            if failure is not None:
+                for event in cycle.pending_events:
+                    event.payload["partial"] = True
+            self.logger.log_events(cycle.pending_events)
+            self._cycle_events.extend(cycle.pending_events)
+        produced = len(cycle.pending_events)
+        cycle.pending_events.clear()
+
+        if failure is not None:
             self._log_event(EventType.NOTABLE_EVENT, cycle_id, payload={
                 "phase": phase_name,
-                "error": str(e),
+                "error": str(failure),
+                "error_type": type(failure).__name__,
                 "type": "PHASE_ERROR",
+                "partial_events_kept": produced,
+                "world_may_be_partially_mutated": True,
             })
+            cycle.failed_phases.append(phase_name)
 
-        self._log_event(EventType.PHASE_END, cycle_id, payload={"phase": phase_name})
+        # PHASE_END carries the outcome. It used to be logged unconditionally
+        # with no status, which made the watchdog's phase_completion rule —
+        # comparing PHASE_START to PHASE_END counts to detect a swallowed
+        # failure — permanently unable to fire.
+        self._log_event(EventType.PHASE_END, cycle_id, payload={
+            "phase": phase_name,
+            "status": "error" if failure is not None else "ok",
+            "events": produced,
+        })
 
     def _apply_memory_reset(self, cycle_id: int) -> None:
         """Wipe memory journals and self-history for the MEM_RESET condition.

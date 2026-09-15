@@ -45,7 +45,7 @@ async def execute(
     logger: AppendOnlyJSONLLogger,
 ) -> list[EventEnvelope]:
     """Gather retrieval queries from both agents and execute them."""
-    events = []
+    events = cycle.pending_events
 
     for agent_id in config.agents:
         ctx = contexts[agent_id]
