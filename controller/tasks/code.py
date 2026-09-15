@@ -53,7 +53,7 @@ NOT_EXECUTED_NOTE = """Your code will be read and reviewed, not executed. Write 
 
 EXECUTED_NOTE = """Your code WILL BE RUN. It executes in an isolated container with no network access, a short time limit, and nothing from outside this workspace: standard library only, no package installs, no files but the ones you write here. Its output — and any traceback — is shown to the evaluator and becomes part of the record.
 
-Your source is saved as `module.py`. If you supply tests they are saved as `test_module.py` and run INSTEAD of the module, so they must `import module` (or `from module import ...`) themselves. Use plain asserts or `unittest`; nothing else is installed.
+Your source and your tests are saved together as a single file, `module.py`, and run as one — so your tests can call your functions directly, with no import. Put any test calls at the bottom so they actually execute when the file runs. Use plain asserts or `unittest`; nothing else is installed.
 
 The workspace is read-only. If you need scratch space, write under `/tmp`: it is RAM-backed, shares the container's memory budget, and is thrown away when the run ends.
 
@@ -176,6 +176,27 @@ class CodeTask(Task):
     def output_schema(self) -> Type[BaseModel]:
         return CodeArtifactOutput
 
+    @staticmethod
+    def full_source(content: str, tests: str) -> str:
+        """The module and its tests as one file — what is stored AND what runs.
+
+        These used to diverge: `apply` concatenated them into a single stored
+        artifact while `execution_request` wrote them as module.py and
+        test_module.py and ran the second. So the evaluator scored one thing and
+        the container ran another, and the split version only worked if the
+        agent wrote an `import module` line that nothing in its own artifact
+        needed. It reliably did not, and every execution died with a NameError
+        that was this packaging, not the agents' code.
+
+        One file removes the import requirement entirely — tests share the
+        module's namespace — and makes "what ran" and "what was scored"
+        the same text by construction.
+        """
+        body = content
+        if tests.strip():
+            body += f"\n\n# --- tests ---\n{tests}"
+        return body
+
     def apply(self, world: WorldState, output: BaseModel, cycle: CycleState,
               max_tokens: int | None = None) -> str:
         assert isinstance(output, CodeArtifactOutput)
@@ -183,9 +204,7 @@ class CodeTask(Task):
             output.artifact_id, fallback=f"module_cycle{cycle.cycle_id}"
         )
         aid = output.artifact_id
-        body = output.content
-        if output.tests.strip():
-            body += f"\n\n# --- tests ---\n{output.tests}"
+        body = self.full_source(output.content, output.tests)
 
         if max_tokens:
             body, truncated = self.enforce_length(body, max_tokens)
@@ -262,16 +281,10 @@ class CodeTask(Task):
         if not proposal or not (proposal.get("content") or "").strip():
             return None
 
-        files = {"module.py": proposal["content"]}
-        entrypoint = "python /workspace/module.py"
-        tests = (proposal.get("tests") or "").strip()
-        if tests:
-            files["test_module.py"] = tests
-            entrypoint = "python /workspace/test_module.py"
-
         return ExecutionRequest(
-            files=files,
-            entrypoint=entrypoint,
+            files={"module.py": self.full_source(
+                proposal["content"], proposal.get("tests") or "")},
+            entrypoint="python /workspace/module.py",
             timeout_seconds=timeout_seconds,
             requested_by=proposal.get("proposing_agent", ""),
             cycle_id=cycle.cycle_id,

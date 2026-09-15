@@ -96,19 +96,36 @@ class TestExecutionRequest:
         assert req.requested_by == "axiom"
         assert req.cycle_id == 3
 
-    def test_tests_replace_the_module_as_entrypoint(self):
-        cycle = state(proposal={"tests": "import module\nassert True\n"})
+    def test_tests_run_in_the_same_file_as_the_module(self):
+        """Split files needed an `import module` line the agents never wrote.
+
+        Every execution in SHAKE_001 cycle 0 died with a NameError from that,
+        which scored the agents down for our packaging.
+        """
+        cycle = state(proposal={"tests": "assert summarise([1]) is not None\n"})
         req = CodeTask().execution_request(None, cycle, 30.0)
-        assert sorted(req.files) == ["module.py", "test_module.py"]
-        assert req.entrypoint == "python /workspace/test_module.py"
+        assert sorted(req.files) == ["module.py"]
+        assert req.entrypoint == "python /workspace/module.py"
+        assert "print('hello')" in req.files["module.py"]
+        assert "assert summarise" in req.files["module.py"]
+
+    def test_what_runs_is_what_was_stored(self):
+        """The file in the container and the artifact the evaluator reads must
+        be the same text, or `correctness` is scored against something that
+        never ran."""
+        from controller.world.state import WorldState  # noqa: F401
+
+        content, tests = "def f():\n    return 1\n", "assert f() == 1\n"
+        cycle = state(proposal={"content": content, "tests": tests})
+        req = CodeTask().execution_request(None, cycle, 30.0)
+        assert req.files["module.py"] == CodeTask.full_source(content, tests)
 
     def test_filenames_do_not_depend_on_the_artifact_id(self):
-        """`3d-grid` is a valid filename and an invalid module name; tests
-        importing it would fail for a reason unrelated to the agents' code."""
+        """`3d-grid` is a valid filename and an invalid module name."""
         cycle = state(proposal={"artifact_id": "3d-grid", "protocol_id": "3d-grid",
-                                "tests": "import module\n"})
+                                "tests": "assert True\n"})
         req = CodeTask().execution_request(None, cycle, 30.0)
-        assert sorted(req.files) == ["module.py", "test_module.py"]
+        assert sorted(req.files) == ["module.py"]
 
     def test_empty_content_runs_nothing(self):
         cycle = state(proposal={"content": "   \n"})
