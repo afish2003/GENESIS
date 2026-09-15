@@ -7,6 +7,7 @@ modality, and the contrast against BASELINE would measure something else.
 These tests pin that self-history is cleared with the journal.
 """
 
+import json
 import tempfile
 from pathlib import Path
 
@@ -138,3 +139,80 @@ class TestSelfHistoryCleared:
         returned = kb.query("before the reset", kb_name="self_history")
         assert all(r.doc_id != "old" for r in returned)
         assert all("before the reset" not in r.text for r in returned)
+
+
+class TestSelfHistoryPersistence:
+    """Self-history used to live only in memory.
+
+    A run resumed at cycle 60 lost every earlier cycle of the agents' own past
+    with no event recorded, and nothing survived for post-hoc analysis. The
+    dedupe check in add_to_self_history presupposed a durability that did not
+    exist.
+    """
+
+    def _manager(self, kb_dir):
+        kb = KnowledgeBaseManager(kb_dir=kb_dir)
+        kb.initialize(load_embeddings=False)
+        return kb
+
+    def test_entries_are_written_to_disk(self, tmp_path):
+        kb = self._manager(tmp_path)
+        kb.add_to_self_history("memory_axiom_cycle0", "We agreed to prioritise coherence.")
+        assert kb.self_history_path.exists()
+        lines = [l for l in kb.self_history_path.read_text().splitlines() if l.strip()]
+        assert len(lines) == 1
+        assert json.loads(lines[0])["doc_id"] == "memory_axiom_cycle0"
+
+    def test_a_fresh_manager_reloads_them(self, tmp_path):
+        """The resume path."""
+        first = self._manager(tmp_path)
+        for i in range(3):
+            first.add_to_self_history(f"d{i}", f"Cycle {i} summary about governance.")
+        assert first.self_history_count == 3
+
+        resumed = self._manager(tmp_path)
+        assert resumed.self_history_count == 3
+        assert resumed.query("governance", kb_name="self_history")
+
+    def test_clear_truncates_the_file(self, tmp_path):
+        """Otherwise a resume restores what MEM_RESET removed."""
+        kb = self._manager(tmp_path)
+        kb.add_to_self_history("d1", "Something the agents should forget.")
+        assert kb.self_history_path.exists()
+
+        kb.clear_self_history()
+        assert not kb.self_history_path.exists()
+
+        resumed = self._manager(tmp_path)
+        assert resumed.self_history_count == 0
+
+    def test_accumulates_after_a_reset(self, tmp_path):
+        kb = self._manager(tmp_path)
+        kb.add_to_self_history("old", "Before the reset.")
+        kb.clear_self_history()
+        kb.add_to_self_history("new", "After the reset.")
+
+        resumed = self._manager(tmp_path)
+        assert resumed.self_history_count == 1
+        ids = {d["doc_id"] for d in resumed.indices["self_history"]._documents}
+        assert ids == {"new"}
+
+    def test_dedupe_survives_a_reload(self, tmp_path):
+        """Re-indexing a cycle after resume must not duplicate it."""
+        first = self._manager(tmp_path)
+        first.add_to_self_history("memory_axiom_cycle7", "Cycle 7.")
+
+        resumed = self._manager(tmp_path)
+        resumed.add_to_self_history("memory_axiom_cycle7", "Cycle 7.")
+        assert resumed.self_history_count == 1
+
+    def test_a_write_failure_does_not_break_the_run(self, tmp_path, monkeypatch):
+        """Losing durability is bad; losing the cycle is worse."""
+        kb = self._manager(tmp_path)
+
+        def boom(*a, **k):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(Path, "open", boom)
+        kb.add_to_self_history("d1", "Still indexed in memory.")
+        assert kb.self_history_count == 1

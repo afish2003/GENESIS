@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -38,6 +39,7 @@ class KnowledgeBaseManager:
 
     def initialize(self, load_embeddings: bool = True) -> None:
         """Load all knowledge bases and build indices."""
+        self._embeddings_enabled = load_embeddings
         for name in KB_NAMES:
             index = RetrievalIndex(
                 name=name,
@@ -76,11 +78,20 @@ class KnowledgeBaseManager:
         all_results.sort(key=lambda r: r.score, reverse=True)
         return all_results[:self.rerank_top_k]
 
+    @property
+    def self_history_path(self) -> Path:
+        return self.kb_dir / "self_history" / "self_history.jsonl"
+
     def add_to_self_history(self, doc_id: str, text: str, metadata: dict | None = None) -> None:
-        """Index one artifact of the agents' own past.
+        """Index one artifact of the agents' own past, and persist it.
 
         Called each cycle with memory summaries, doctrine snapshots and protocol
         versions, so agents can cite their own history.
+
+        Persistence matters: this used to append to the in-memory index only,
+        so a run resumed at cycle 60 lost every earlier cycle of self-history
+        with no event recorded, and nothing was left for post-hoc analysis. The
+        dedupe check below presupposed a durability that did not exist.
         """
         if not text or not text.strip():
             return
@@ -89,13 +100,26 @@ class KnowledgeBaseManager:
             return
         if any(d.get("doc_id") == doc_id for d in index._documents):
             return  # already indexed; resume must not duplicate
-        index._documents.append({
-            "doc_id": doc_id,
-            "text": text,
-            "metadata": metadata or {},
-        })
+        doc = {"doc_id": doc_id, "text": text, "metadata": metadata or {}}
+        index._documents.append(doc)
         index._doc_texts.append(text)
         index.build_index()
+
+        # An index without an embedder returns raw BM25 scores while the other
+        # KBs return reranked similarities, and query() sorts them together —
+        # so self_history either swamped the corpora or was swamped by them,
+        # regardless of relevance. It starts empty, so this is the first chance
+        # to attach one.
+        if self._embeddings_enabled and index._embedder is None:
+            index.load_embedder(self.embedding_model)
+
+        try:
+            path = self.self_history_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(doc, ensure_ascii=False) + "\n")
+        except OSError as e:
+            logger.error("Could not persist self-history entry %s: %s", doc_id, e)
 
     def clear_self_history(self) -> int:
         """Wipe self-history. Returns how many documents were removed.
@@ -113,6 +137,15 @@ class KnowledgeBaseManager:
         index._documents.clear()
         index._doc_texts.clear()
         index.build_index()
+
+        # Truncate on disk too, or a resume would restore what the reset removed.
+        try:
+            path = self.self_history_path
+            if path.exists():
+                path.unlink()
+        except OSError as e:
+            logger.error("Could not clear persisted self-history: %s", e)
+
         if removed:
             logger.info("Cleared %d self-history documents on memory reset", removed)
         return removed
