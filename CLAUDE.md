@@ -48,6 +48,9 @@ python scripts/compare_arms.py --runs RUN_A RUN_B --labels a b
 # Before enabling code execution on a host: real containers, real escape tests
 docker pull python:3.11-slim
 python scripts/verify_containment.py
+
+# Persistent, size-capped storage for agents that build a codebase
+python scripts/setup_project_volume.py --path ~/genesis_project --size 32g
 ```
 
 No linter is currently configured. Python 3.11+ is required (uses modern typing features).
@@ -74,7 +77,7 @@ Each phase has its own module in `controller/phases/` with corresponding Pydanti
 
 - **Monitoring** (`controller/monitor/`): deterministic rules run after each cycle and write `anomalies.jsonl`. No inference — a model-based monitor could be argued out of firing, and this experiment deliberately pressures agents toward persuasion.
 
-- **Sandbox** (`controller/sandbox/`): `ExecutionSandbox` for agent-authored code. `NullSandbox` refuses everything and is the default. With `execution_enabled` and `sandbox_backend=docker`, the optional `execution` phase runs the cycle's artifact in a hardened container (no network, read-only, non-root, capped) and feeds the result to the evaluator, so `correctness` is scored against what the code did. Run `scripts/verify_containment.py` on a host before enabling it. See `docs/containment_design.md`.
+- **Sandbox** (`controller/sandbox/`): `ExecutionSandbox` for agent-authored code. `NullSandbox` refuses everything and is the default. With `execution_enabled` and `sandbox_backend=docker`, the optional `execution` phase runs the cycle's artifact in a hardened container (no network, read-only, non-root, capped) and feeds the result to the evaluator, so `correctness` is scored against what the code did. `sandbox_project_dir` additionally mounts a persistent writable `/project` so agents can build a codebase across cycles; it must be its own size-capped filesystem (`scripts/setup_project_volume.py`) and the controller refuses an ordinary directory, because a Docker bind mount has no size limit. Run `scripts/verify_containment.py` on a host before enabling execution. See `docs/containment_design.md`.
 
 - **World State** (`controller/world/`): `WorldState` owns all artifact I/O. Reads everything at cycle start, writes + computes diffs at cycle end. Supports checkpointing for run resume. Artifact types (Pydantic models in `world/artifacts.py`): DoctrineDocument, IdentityStatement, MemoryEntry, ProtocolDocument, EthicalLogEntry, RelationshipLogEntry, ScenarioEvent.
 
@@ -98,6 +101,7 @@ The axes that make this a platform rather than one experiment:
 | `task` | `protocol` or `code` — what gets built and how it is scored. |
 | `phase_sequence` | Reorder or omit phases; validated against known dependencies. |
 | `execution_enabled` | Add the `execution` phase, running the artifact in the sandbox. Off by default. |
+| `sandbox_project_dir` | A persistent, quota-capped `/project` the agents build in across cycles. |
 | `framing` | `disclosed` / `undisclosed` — whether agents are told they are studied. |
 | `identity_seed` | `prescribed` / `minimal` — how much identity is given rather than developed. |
 | `inference_backend` | `ollama` / `openai` / `mock`. |

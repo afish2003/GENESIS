@@ -258,12 +258,63 @@ and do not restart with execution enabled until `verify_containment.py` passes
 and you know where it came from.
 
 
-## 9. Sizing, in one place
+## 9. Persistent project storage
+
+The ephemeral read-only workspace is right for "write one module and run it" and
+useless for "develop an application over 100 cycles": nothing survives to the
+next cycle, so there is no codebase to grow. `sandbox_project_dir` mounts a
+persistent writable directory at `/project`, which also becomes the working
+directory when code runs.
+
+That is the one long-lived writable thing the agents get, so the containment
+question is sharp: **a Docker bind mount has no size limit, and Docker cannot
+give it one.** `--storage-opt size=` is accepted and silently ignored on the
+overlayfs driver (§6). So the cap cannot come from Docker. It comes from the
+directory being a filesystem that is genuinely that size, and the controller
+**refuses to mount anything else** — it compares `statvfs` against
+`sandbox_project_size` and rejects an ordinary directory with instructions
+rather than running with an uncapped path to the host disk.
+
+```bash
+python scripts/setup_project_volume.py --path ~/genesis_project --size 32g
+```
+
+| Host | Mechanism | Privilege |
+|---|---|---|
+| Linux | sparse image + `mkfs.ext4` + `mount -o loop` | one `sudo` at setup |
+| macOS | `hdiutil` APFS sparse bundle | none |
+
+Both are sparse: a 32 GiB volume costs ~25 MB until the agents fill it. Both
+were measured to produce ENOSPC at the cap from inside a container — 200 MiB
+written to a 300 MiB macOS bundle, errno 28; 900 MiB to a 1 GiB ext4 loop image,
+errno 28.
+
+Also refused, regardless of size: any path inside the repo, `world/`, the
+research logs, `~/.ssh` or `~/.aws`. Doctrine and memory are controller-mediated
+artifacts and the logs are append-only by design; an agent able to write either
+can forge its own history, and no downstream analysis could tell.
+
+Running out of space is a bad cycle, not a broken run — the execution reports a
+non-zero exit with the ENOSPC traceback, the evaluator sees it, and the next
+cycle proceeds.
+
+### What this changes about the experiment
+
+Worth stating plainly, because it is easy to miss: **the project volume is a
+second channel of persistence that the controller does not mediate.** Under
+MEM_RESET the agents' journals and self-history are wiped and their codebase is
+not. That is a legitimate and interesting design — agents who forget what they
+decided but inherit what they built — but it is not what MEM_RESET meant before,
+and any arm using both should say so.
+
+## 10. Sizing, in one place
 
 The only number most runs need to change:
 
 ```yaml
-sandbox_memory: 4g      # container memory AND scratch ceiling; see section 6
+sandbox_memory: 4g            # container memory AND /tmp scratch; see section 6
+sandbox_project_dir: ~/genesis_project   # persistent codebase; section 9
+sandbox_project_size: 32g     # checked against the real filesystem, not trusted
 ```
 
 Check it against the host before a run that matters:

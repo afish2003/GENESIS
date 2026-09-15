@@ -91,7 +91,7 @@ class TestExecutionRequest:
         req = CodeTask().execution_request(None, state(), 30.0)
         assert req is not None
         assert req.files == {"module.py": "print('hello')\n"}
-        assert req.entrypoint == "python module.py"
+        assert req.entrypoint == "python /workspace/module.py"
         assert req.timeout_seconds == 30.0
         assert req.requested_by == "axiom"
         assert req.cycle_id == 3
@@ -100,7 +100,7 @@ class TestExecutionRequest:
         cycle = state(proposal={"tests": "import module\nassert True\n"})
         req = CodeTask().execution_request(None, cycle, 30.0)
         assert sorted(req.files) == ["module.py", "test_module.py"]
-        assert req.entrypoint == "python test_module.py"
+        assert req.entrypoint == "python /workspace/test_module.py"
 
     def test_filenames_do_not_depend_on_the_artifact_id(self):
         """`3d-grid` is a valid filename and an invalid module name; tests
@@ -125,7 +125,7 @@ class TestExecutionRequest:
         cycle = state(proposal={"content": "x=1\n", "title": hostile,
                                 "artifact_id": hostile})
         req = CodeTask().execution_request(None, cycle, 30.0)
-        assert req.entrypoint == "python module.py"
+        assert req.entrypoint == "python /workspace/module.py"
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +137,7 @@ class TestExecutionPhase:
         sb = FakeSandbox()
         asyncio.run(run_phase(cfg(), state(), sb))
         assert len(sb.requests) == 1
-        assert sb.requests[0].entrypoint == "python module.py"
+        assert sb.requests[0].entrypoint == "python /workspace/module.py"
 
     def test_result_is_stored_for_evaluation(self):
         cycle = state()
@@ -150,7 +150,7 @@ class TestExecutionPhase:
         events = asyncio.run(run_phase(cfg(), cycle, FakeSandbox()))
         ce = [e for e in events if e.event_type.value == "CODE_EXECUTION"]
         assert len(ce) == 1
-        assert ce[0].payload["entrypoint"] == "python module.py"
+        assert ce[0].payload["entrypoint"] == "python /workspace/module.py"
         assert ce[0].payload["outcome"] == "OK"
         assert ce[0].payload["artifact_id"] == "scheduler"
         assert ce[0].agent_id == "axiom"

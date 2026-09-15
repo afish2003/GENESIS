@@ -202,6 +202,22 @@ class RunConfig(BaseModel):
         description="Wall-clock ceiling for one execution, enforced in and out "
                     "of the container",
     )
+    sandbox_project_dir: Optional[Path] = Field(
+        default=None,
+        description="A persistent directory the agents may WRITE to, mounted at "
+                    "/project and surviving across cycles — what a run needs if "
+                    "the agents are to build a codebase rather than one module "
+                    "per cycle. It must be its own size-capped filesystem; the "
+                    "controller refuses an ordinary directory, because a Docker "
+                    "bind mount has no size limit. Create one with "
+                    "scripts/setup_project_volume.py. None means no project "
+                    "volume: agents get the ephemeral read-only workspace only.",
+    )
+    sandbox_project_size: str = Field(
+        default="32g",
+        description="The size sandbox_project_dir is expected to be. Checked "
+                    "against the actual filesystem, not trusted.",
+    )
     execution_enabled: bool = Field(
         default=False,
         description="Add the `execution` phase to the default sequence, running "
@@ -408,6 +424,8 @@ def load_config(
         "SANDBOX_RUNTIME": "sandbox_runtime",
         "SANDBOX_MEMORY": "sandbox_memory",
         "SANDBOX_TMPFS": "sandbox_tmpfs",
+        "SANDBOX_PROJECT_DIR": "sandbox_project_dir",
+        "SANDBOX_PROJECT_SIZE": "sandbox_project_size",
         "SANDBOX_TIMEOUT_SECONDS": "sandbox_timeout_seconds",
         "EXECUTION_ENABLED": "execution_enabled",
         "INDEPENDENT_PROPOSALS": "independent_proposals",

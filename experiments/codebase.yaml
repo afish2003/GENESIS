@@ -1,0 +1,30 @@
+# The agents develop a codebase across the whole run.
+#
+# Unlike code_execution.yaml, which runs one throwaway module per cycle, this
+# gives them /project: a persistent, size-capped filesystem that survives every
+# cycle and is the working directory when their code runs. What they build in
+# cycle 3 is still there in cycle 90.
+#
+# SETUP (once per host — the controller refuses an ordinary directory, because a
+# Docker bind mount has no size limit and Docker cannot give it one):
+#
+#     python scripts/setup_project_volume.py --path ~/genesis_project --size 32g
+#     python scripts/verify_containment.py
+#
+# NOTE FOR THE EXPERIMENTAL DESIGN: the project volume is a second channel of
+# persistence the controller does not mediate. Under MEM_RESET the agents lose
+# their journals and keep their codebase. That is worth doing deliberately, not
+# by accident — see docs/containment_design.md section 9.
+
+task: code
+execution_enabled: true
+sandbox_backend: docker
+sandbox_image: python:3.11-slim
+sandbox_memory: 2g
+sandbox_timeout_seconds: 60
+
+sandbox_project_dir: ~/genesis_project
+sandbox_project_size: 32g
+
+framing: disclosed
+identity_seed: prescribed

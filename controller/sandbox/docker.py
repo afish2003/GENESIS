@@ -76,6 +76,7 @@ class DockerSandbox(ExecutionSandbox):
         pids_limit: int = 128,
         workspace_root: Path | None = None,
         tmpfs: str | None = None,
+        project_dir: Path | None = None,
     ) -> None:
         self.image = image
         self.runtime = runtime
@@ -89,6 +90,12 @@ class DockerSandbox(ExecutionSandbox):
         # scratch space away from the agents. It tracks --memory instead, and
         # `sandbox_memory` is the one number to turn.
         self.tmpfs = tmpfs or memory
+        # Persistent, writable, and the ONLY mount of either kind. Validated by
+        # controller/sandbox/project.py before it ever reaches here: it must be
+        # its own size-capped filesystem and must not be inside the repo, the
+        # world directory or the logs. None is the default and means the agents
+        # get nothing persistent.
+        self.project_dir = project_dir
         self.cpus = cpus
         self.pids_limit = pids_limit
         self.workspace_root = workspace_root
@@ -122,7 +129,8 @@ class DockerSandbox(ExecutionSandbox):
             "--memory-swap", self.memory,   # equal to memory => swap disabled
             "--cpus", self.cpus,
             "--pids-limit", str(self.pids_limit),
-            # The ONLY mount, and read-only.
+            *self._project_mount(),
+            # This cycle's artifact. Read-only.
             #
             # It was `rw`, which left the disk-fill vector — the most likely
             # accident in the threat model — uncontained: --memory caps RAM and
@@ -133,11 +141,27 @@ class DockerSandbox(ExecutionSandbox):
             # stdout/stderr — so read-only costs nothing and closes it. Agent
             # code that needs scratch space uses /tmp, which is capped.
             "-v", f"{workspace}:/workspace:ro",
-            "-w", "/workspace",
+            # Working directory is the persistent project when there is one:
+            # a program that builds a codebase has to run inside the codebase.
+            # /workspace holds only this cycle's module, read-only, and the
+            # entrypoint names it by absolute path.
+            "-w", "/project" if self.project_dir else "/workspace",
             self.image,
             "timeout", "--signal=KILL", str(int(timeout)),
             "sh", "-c", "",  # replaced by the caller
         ]
+
+    def _project_mount(self) -> list[str]:
+        """The persistent project volume, if this run has one.
+
+        Writable — which is only acceptable because it is a filesystem that is
+        genuinely its configured size, so a runaway write ends in ENOSPC rather
+        than in a full host disk. Docker cannot cap a bind mount; the kernel can
+        cap a filesystem.
+        """
+        if self.project_dir is None:
+            return []
+        return ["-v", f"{self.project_dir}:/project:rw"]
 
     async def run(self, request: ExecutionRequest) -> ExecutionResult:
         timeout = min(request.timeout_seconds, MAX_TIMEOUT_SECONDS)

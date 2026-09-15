@@ -18,6 +18,7 @@ is only read, whose code is then run, is being lied to about its own task.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Type
 
 from pydantic import BaseModel
@@ -57,6 +58,17 @@ Your source is saved as `module.py`. If you supply tests they are saved as `test
 The workspace is read-only. If you need scratch space, write under `/tmp`: it is RAM-backed, shares the container's memory budget, and is thrown away when the run ends.
 
 Make the run say something a reader can learn from — print what the code does, not that it ran. Prefer code that demonstrates itself over code that merely defines itself."""
+
+PROJECT_NOTE = """
+
+You also have `/project`: a persistent directory that SURVIVES between cycles and is your working directory when your code runs. It is the only thing you have that persists outside your own memory. Anything you write there — source files, tests, data, notes — will still be there next cycle and every cycle after. It is a fixed-size volume, so it can fill up.
+
+This is how you build something larger than one file: have this cycle's program create or modify files under `/project`, then extend them in later cycles.
+
+Its contents right now:
+
+{tree}
+"""
 
 EVALUATION_PROMPT = """Evaluate the following code module. {preamble}
 
@@ -121,14 +133,45 @@ class CodeTask(Task):
 
     def design_prompt(self, config: RunConfig, world: WorldState, cycle: CycleState) -> str:
         active = [f"- {pid}: {p.title}" for pid, p in world.protocols.items() if not p.archived]
+        note = (EXECUTED_NOTE if getattr(config, "execution_enabled", False)
+                else NOT_EXECUTED_NOTE)
+        tree = self._project_tree(config)
+        if tree:
+            note += PROJECT_NOTE.format(tree=tree)
         return DESIGN_PROMPT.format(
             partner_name=config.partner_names(config.agents[0]),
             module_list="\n".join(active) if active else "(none yet)",
-            execution_note=(
-                EXECUTED_NOTE if getattr(config, "execution_enabled", False)
-                else NOT_EXECUTED_NOTE
-            ),
+            execution_note=note,
         )
+
+    @staticmethod
+    def _project_tree(config, limit: int = 200) -> str:
+        """What the agents have built so far, as they would see it.
+
+        Read from the host side of the same directory the container mounts.
+        Without this the persistent volume is invisible: the agents would have
+        to remember their own codebase from memory summaries, which is exactly
+        the channel MEM_RESET removes.
+        """
+        root = getattr(config, "sandbox_project_dir", None)
+        if not root or not getattr(config, "execution_enabled", False):
+            return ""
+        root = Path(root)
+        if not root.is_dir():
+            return ""
+        entries = []
+        for path in sorted(root.rglob("*")):
+            if any(part.startswith(".") for part in path.relative_to(root).parts):
+                continue
+            rel = path.relative_to(root)
+            if path.is_dir():
+                entries.append(f"  {rel}/")
+            else:
+                entries.append(f"  {rel}  ({path.stat().st_size} bytes)")
+            if len(entries) >= limit:
+                entries.append(f"  ... (listing truncated at {limit} entries)")
+                break
+        return "\n".join(entries) if entries else "  (empty — nothing built yet)"
 
     def output_schema(self) -> Type[BaseModel]:
         return CodeArtifactOutput
@@ -220,11 +263,11 @@ class CodeTask(Task):
             return None
 
         files = {"module.py": proposal["content"]}
-        entrypoint = "python module.py"
+        entrypoint = "python /workspace/module.py"
         tests = (proposal.get("tests") or "").strip()
         if tests:
             files["test_module.py"] = tests
-            entrypoint = "python test_module.py"
+            entrypoint = "python /workspace/test_module.py"
 
         return ExecutionRequest(
             files=files,

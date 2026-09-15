@@ -20,7 +20,11 @@ These are slow (a container start each) and marked `live_sandbox`:
 from __future__ import annotations
 
 import asyncio
+import os
+import platform
 import shutil
+import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -45,8 +49,14 @@ requires_runtime = pytest.mark.skipif(
 )
 
 
-def run(code: str, *, timeout: float = TIMEOUT, entrypoint: str = "python module.py",
-        **kw):
+def run(code: str, *, timeout: float = TIMEOUT,
+        entrypoint: str = "python /workspace/module.py", **kw):
+    """Run `code` as the cycle's module.
+
+    Absolute path because the working directory is /project when a project
+    volume is mounted — the module itself always lives in the read-only
+    /workspace, exactly as CodeTask.execution_request writes it.
+    """
     sb = DockerSandbox(**kw)
     return asyncio.run(sb.run(ExecutionRequest(
         files={"module.py": code}, entrypoint=entrypoint, timeout_seconds=timeout,
@@ -370,3 +380,139 @@ class TestMemoryParsing:
     ])
     def test_parse_memory(self, text, expected):
         assert parse_memory(text) == expected
+
+
+# ---------------------------------------------------------------------------
+# The persistent project volume
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def project_volume(tmp_path_factory):
+    """A real, small, capped filesystem — not a directory pretending to be one.
+
+    The quota is the entire point of this volume, so testing it against an
+    ordinary directory would test nothing. macOS can make one without sudo;
+    elsewhere, point GENESIS_TEST_PROJECT_VOLUME at a mounted one.
+    """
+    existing = os.environ.get("GENESIS_TEST_PROJECT_VOLUME")
+    if existing:
+        yield Path(existing)
+        return
+    if platform.system() != "Darwin":
+        pytest.skip("set GENESIS_TEST_PROJECT_VOLUME to a mounted capped volume")
+
+    base = tmp_path_factory.mktemp("vol")
+    mount = Path("/tmp/genesis_live_project")
+    bundle = base / "vol.sparsebundle"
+    subprocess.run(["hdiutil", "create", "-size", "200m", "-fs", "APFS",
+                    "-volname", "genesislive", "-type", "SPARSEBUNDLE", "-quiet",
+                    str(base / "vol")], check=True)
+    mount.mkdir(exist_ok=True)
+    subprocess.run(["hdiutil", "attach", str(bundle), "-mountpoint", str(mount),
+                    "-nobrowse", "-quiet"], check=True)
+    os.chmod(mount, 0o777)
+    try:
+        yield mount
+    finally:
+        subprocess.run(["hdiutil", "detach", str(mount), "-quiet"], check=False)
+
+
+@requires_runtime
+class TestProjectVolume:
+    """Persistent storage for agents building a codebase, and its hard ceiling."""
+
+    def test_writes_persist_between_executions(self, project_volume):
+        """The capability: cycle N+1 can see what cycle N built.
+
+        Asserted across two separate containers, because that is what two
+        cycles are. The ephemeral workspace deliberately does not do this.
+        """
+        for f in project_volume.glob("*"):
+            f.unlink()
+
+        first = run(
+            "open('app.py', 'w').write('VERSION = 1\\n')\n"
+            "print('created app.py')\n",
+            project_dir=project_volume,
+        )
+        assert first.outcome is ExecutionOutcome.OK, (first.detail, first.stderr)
+
+        second = run(
+            "import os\n"
+            "print('found:', sorted(os.listdir('.')))\n"
+            "print(open('app.py').read().strip())\n",
+            project_dir=project_volume,
+        )
+        assert second.outcome is ExecutionOutcome.OK, (second.detail, second.stderr)
+        assert "app.py" in second.stdout
+        assert "VERSION = 1" in second.stdout
+
+    def test_the_quota_is_enforced_by_the_filesystem(self, project_volume):
+        """Docker cannot cap a bind mount. The filesystem can, and does."""
+        for f in project_volume.glob("*"):
+            f.unlink()
+
+        r = run(
+            "import os\n"
+            "w = 0\n"
+            "try:\n"
+            "    for n in range(20):\n"
+            "        with open(f'big{n}', 'wb') as f:\n"
+            "            f.write(b'x' * 50 * 1024 * 1024)\n"
+            "            f.flush(); os.fsync(f.fileno())\n"
+            "        w += 50\n"
+            "    print('WROTE_ALL', w)\n"
+            "except OSError as e:\n"
+            "    print('CONTAINED', w, e.errno)\n",
+            project_dir=project_volume, timeout=120.0,
+        )
+        assert "WROTE_ALL" not in r.stdout, (
+            f"1 GiB written to a 200 MiB volume — the quota is not real: {r.stdout}"
+        )
+        assert "CONTAINED" in r.stdout, (r.outcome, r.stdout, r.stderr)
+        assert r.stdout.split("CONTAINED")[1].split()[1] == "28", "expected ENOSPC"
+
+        for f in project_volume.glob("big*"):
+            f.unlink()
+
+    def test_a_full_volume_does_not_break_the_next_cycle(self, project_volume):
+        """Running out of space must be a bad cycle, not a broken run."""
+        filler = project_volume / "filler"
+        try:
+            with open(filler, "wb") as f:
+                try:
+                    for _ in range(400):
+                        f.write(b"x" * 1024 * 1024)
+                        f.flush()
+                except OSError:
+                    pass
+            r = run("print('still runs')", project_dir=project_volume)
+            assert r.outcome is ExecutionOutcome.OK, (r.detail, r.stderr)
+            assert "still runs" in r.stdout
+        finally:
+            filler.unlink(missing_ok=True)
+
+    def test_the_world_directory_is_still_invisible(self, project_volume):
+        """A writable mount must not become a second door into the host."""
+        r = run(
+            "import os\n"
+            "print('project:', sorted(os.listdir('/project'))[:5])\n"
+            "for p in ('/Users', '/home', '/world', '/repo'):\n"
+            "    if os.path.isdir(p) and os.listdir(p):\n"
+            "        print('ESCAPED:', p)\n"
+            "print('checked')\n",
+            project_dir=project_volume,
+        )
+        assert "ESCAPED" not in r.stdout, r.stdout
+        assert "checked" in r.stdout
+
+    def test_the_workspace_is_still_read_only(self, project_volume):
+        r = run(
+            "try:\n"
+            "    open('/workspace/probe', 'w').write('x')\n"
+            "    print('ESCAPED: wrote to the workspace')\n"
+            "except OSError:\n"
+            "    print('contained')\n",
+            project_dir=project_volume,
+        )
+        assert "ESCAPED" not in r.stdout, r.stdout
