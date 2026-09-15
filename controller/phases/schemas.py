@@ -92,6 +92,19 @@ class ProtocolProposalOutput(BaseModel):
 # Phase 8: Evaluation
 # ---------------------------------------------------------------------------
 
+class CodeArtifactOutput(BaseModel):
+    """A code module the agents author in the sandbox task."""
+
+    action: ProtocolAction
+    artifact_id: str = Field(..., description="Unique id for this module, e.g. scheduler")
+    title: str = Field(..., description="Short human-readable name")
+    language: str = Field(default="python")
+    content: str = Field(..., description="The complete source file")
+    tests: str = Field(default="", description="Accompanying tests, if any")
+    rationale: str = Field(..., description="What this does and why it is needed")
+    proposing_agent: str = Field(default="", description="Set by controller after parsing")
+
+
 class EvaluationScores(BaseModel):
     """Scores from the evaluator on a protocol document."""
 

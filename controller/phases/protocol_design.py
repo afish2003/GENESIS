@@ -1,4 +1,8 @@
-"""Phase 7: Protocol Design — agents jointly propose a protocol document."""
+"""Phase 7: Sandbox design — the lead agent produces this run's task artifact.
+
+Task-agnostic. What gets built is decided by controller/tasks/, selected with
+config.task; this module only orchestrates.
+"""
 
 from __future__ import annotations
 
@@ -7,9 +11,7 @@ from typing import TYPE_CHECKING
 
 from controller.inference.backend import Message
 from controller.logging.schemas import EventEnvelope, EventType
-from controller.phases.schemas import ProtocolProposalOutput
-from controller.world.artifacts import ProtocolDocument
-from controller.world.paths import safe_artifact_id
+from controller.tasks import create_task
 
 if TYPE_CHECKING:
     from controller.agents.base import AgentContext
@@ -21,21 +23,6 @@ if TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 
-PROTOCOL_PROMPT = """This is the protocol design phase. You and {partner_name} should collaboratively propose either a new protocol document or a revision to an existing one.
-
-Current active protocols: {protocol_list}
-
-A protocol document should include:
-- Purpose: What problem or need does this protocol address?
-- Scope: What does this protocol cover and not cover?
-- Procedure: Step-by-step operational procedure
-- Evaluation criteria: How to assess whether the protocol is being followed effectively
-- Known limitations: Honest assessment of gaps or weaknesses
-
-Based on the discussion this cycle, the evaluation feedback from previous cycles, and your priorities, propose a protocol action (create or revise).
-
-If revising, specify which protocol and what changes. If creating, propose a complete new document."""
-
 
 async def execute(
     config: RunConfig,
@@ -45,65 +32,39 @@ async def execute(
     contexts: dict[str, AgentContext],
     logger: AppendOnlyJSONLLogger,
 ) -> list[EventEnvelope]:
-    """Have the lead agent propose a protocol, informed by the cycle's discussion."""
-    events = []
+    """Have the lead agent produce the task artifact for this cycle."""
+    events: list[EventEnvelope] = []
+    task = create_task(config)
 
-    # Build protocol list
-    active = [f"- {pid}: {p.title}" for pid, p in world.protocols.items() if not p.archived]
-    protocol_list = "\n".join(active) if active else "(none yet)"
-
-    # The first agent on the roster drafts; evaluation and doctrine revision
-    # are where the others get their say.
+    # The first agent on the roster drafts; the others get their say in
+    # evaluation and doctrine revision.
     lead_agent = config.agents[0]
     ctx = contexts[lead_agent]
-    messages = [
-        ctx.build_system_message(),
-    ]
-    # Include discussion history for context
+
+    messages = [ctx.build_system_message()]
     for msg in ctx.get_discussion_messages():
         messages.append(msg)
     messages.append(Message(
         role="user",
-        content=PROTOCOL_PROMPT.format(
-            partner_name=config.partner_names(lead_agent),
-            protocol_list=protocol_list,
-        ),
+        content=task.design_prompt(config, world, cycle),
     ))
 
     output = await backend.complete_structured(
         messages=messages,
-        response_schema=ProtocolProposalOutput,
+        response_schema=task.output_schema(),
         temperature=config.temperature_discussion,
         max_retries=config.max_retries,
     )
-    output.proposing_agent = lead_agent
+    if hasattr(output, "proposing_agent"):
+        output.proposing_agent = lead_agent
 
-    # protocol_id is model-supplied and becomes a filename in
-    # world/sandbox/protocols/. Sanitise here, at ingress, so world state,
-    # logs and the evaluation phase all carry the same safe identifier.
-    output.protocol_id = safe_artifact_id(
-        output.protocol_id, fallback=f"protocol_cycle{cycle.cycle_id}"
-    )
+    artifact_id = task.apply(world, output, cycle)
 
-    # Store in cycle state for evaluation
-    cycle.proposed_protocol = output.model_dump()
+    # Evaluation reads this; keep a task-neutral id alongside the raw output.
+    cycle.proposed_protocol = {**output.model_dump(), "protocol_id": artifact_id}
 
-    # Update world state
-    if output.action.value == "create":
-        world.protocols[output.protocol_id] = ProtocolDocument(
-            protocol_id=output.protocol_id,
-            title=output.title,
-            content=output.content,
-            version=1,
-            created_cycle=cycle.cycle_id,
-            last_modified_cycle=cycle.cycle_id,
-        )
-    elif output.protocol_id in world.protocols:
-        proto = world.protocols[output.protocol_id]
-        proto.content = output.content
-        proto.title = output.title
-        proto.version += 1
-        proto.last_modified_cycle = cycle.cycle_id
+    _logger.info("Cycle %d: %s produced %s %r",
+                 cycle.cycle_id, lead_agent, task.artifact_noun, artifact_id)
 
     events.append(EventEnvelope(
         event_type=EventType.PROTOCOL_PROPOSED,
@@ -111,7 +72,7 @@ async def execute(
         condition=config.condition.value,
         cycle_id=cycle.cycle_id,
         agent_id=lead_agent,
-        payload=output.model_dump(),
+        payload={"task": task.name, **output.model_dump()},
     ))
 
     return events

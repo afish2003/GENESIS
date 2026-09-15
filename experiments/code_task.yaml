@@ -1,0 +1,6 @@
+# The agents build code instead of prose protocol documents.
+# Artifacts are stored and reviewed, never executed — execution requires
+# ExecutionSandbox, which refuses by default.
+task: code
+framing: disclosed
+identity_seed: prescribed

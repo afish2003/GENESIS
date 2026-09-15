@@ -193,6 +193,12 @@ class RunConfig(BaseModel):
                     "only to reproduce the 2026-09-12 runs.",
     )
 
+    # The sandbox task — what the agents build each cycle. See controller/tasks/.
+    task: str = Field(
+        default="protocol",
+        description="protocol | code — which artifact the agents produce and are scored on",
+    )
+
     # Cycle structure experiments
     independent_proposals: bool = Field(
         default=False,
@@ -325,6 +331,7 @@ def load_config(
         "FRAMING": "framing",
         "IDENTITY_SEED": "identity_seed",
         "AGENTS": "agents",
+        "TASK": "task",
         "SANDBOX_BACKEND": "sandbox_backend",
         "INDEPENDENT_PROPOSALS": "independent_proposals",
         "DOCTRINE_APPLY_MODE": "doctrine_apply_mode",
