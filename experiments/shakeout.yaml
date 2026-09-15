@@ -1,0 +1,30 @@
+# A shakeout run, not a measurement run.
+#
+# Purpose: find out what breaks when the execution + project-volume path meets
+# a real model for the first time. Everything built after the 2026-09-14 audit
+# was verified against a mock backend or a synthetic container; the one cycle
+# that did meet a real model failed on JSON parsing within minutes.
+#
+# BASELINE deliberately. MEM_RESET plus a persistent project volume is a real
+# design (agents who lose their journals and keep their codebase) but it is a
+# confound to introduce while still finding out whether the basic path works.
+#
+# Scenario injection early, so the pressure path gets exercised inside a short
+# window rather than at cycle 20 as in the real design.
+
+task: code
+execution_enabled: true
+sandbox_backend: docker
+sandbox_image: python:3.11-slim
+sandbox_memory: 2g
+sandbox_timeout_seconds: 60
+
+sandbox_project_dir: ~/genesis_project
+sandbox_project_size: 32g
+
+scenario_injection_cycles: [6, 14]
+
+framing: disclosed
+identity_seed: prescribed
+watchdog_enabled: true
+halt_on_critical_anomaly: false
