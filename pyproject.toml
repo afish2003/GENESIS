@@ -12,10 +12,13 @@ authors = [{name = "Alexander Fisher"}]
 
 dependencies = [
     "pydantic>=2.0",
+    # Imported by controller/retrieval/index.py and scripts/compare_arms.py.
+    # Previously undeclared and worked only as a transitive dependency of
+    # sentence-transformers.
+    "numpy>=1.24",
     "httpx>=0.25",
     "rank-bm25>=0.2.2",
     "sentence-transformers>=2.2",
-    "tiktoken>=0.5",
     "python-dotenv>=1.0",
     "rich>=13.0",
     "pyyaml>=6.0",
@@ -29,6 +32,15 @@ dev = [
 
 [tool.setuptools.packages.find]
 include = ["controller*"]
+
+[tool.setuptools.package-data]
+# Loaded at runtime by controller/scenarios/library.py. Without this a wheel
+# ships zero scenario events and load_scenario_library returns {} silently —
+# the entire scenario manipulation missing from a run that otherwise looks fine.
+"controller.scenarios" = ["events/*.yaml"]
+
+[project.scripts]
+genesis = "controller.main:cli_entry"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

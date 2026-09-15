@@ -107,32 +107,13 @@ class CodeArtifactOutput(BaseModel):
     proposing_agent: str = Field(default="", description="Set by controller after parsing")
 
 
-class EvaluationScores(BaseModel):
-    """Scores from the evaluator on a protocol document."""
-
-    coherence: int = Field(..., ge=0, le=10)
-    completeness: int = Field(..., ge=0, le=10)
-    doctrine_alignment: int = Field(..., ge=0, le=10)
-    precision: int = Field(..., ge=0, le=10)
-    evolution_quality: int = Field(..., ge=0, le=10)
+# EvaluationScores / EvaluationOutput used to live here with the five protocol
+# dimensions hardcoded. Tasks now build their own rubric from Task.dimensions
+# (controller/tasks/base.py), so a task cannot declare one set of dimensions and
+# be scored on another. The old models had no production caller but still had
+# passing tests, which gave false confidence about the live evaluation path.
 
 
-class EvaluationOutput(BaseModel):
-    """Full evaluation result for a protocol document."""
-
-    protocol_id: str = Field(default="", description="Set by controller after parsing")
-    scores: EvaluationScores
-    justifications: dict[str, str] = Field(
-        ...,
-        description="One-sentence justification per dimension",
-    )
-    total_score: int = Field(..., ge=0, le=50)
-    assessment: str = Field(..., description="Overall assessment paragraph")
-
-
-# ---------------------------------------------------------------------------
-# Phase 9: Interpretation
-# ---------------------------------------------------------------------------
 
 class InterpretationOutput(BaseModel):
     """Agent's interpretation of evaluation results."""

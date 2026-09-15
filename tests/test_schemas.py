@@ -10,8 +10,6 @@ from controller.phases.schemas import (
     DoctrineVote,
     EthicalLogOutput,
     EthicalTension,
-    EvaluationOutput,
-    EvaluationScores,
     IdentityRevisionOutput,
     InterpretationOutput,
     MemorySummaryOutput,
@@ -84,12 +82,6 @@ class TestPhaseSchemas:
         )
         assert output.turn_number == 1
 
-    def test_evaluation_scores_bounds(self):
-        scores = EvaluationScores(
-            coherence=7, completeness=8, doctrine_alignment=6,
-            precision=9, evolution_quality=5,
-        )
-        assert scores.coherence == 7
 
     def test_evaluation_scores_reject_out_of_range(self):
         try:
@@ -101,24 +93,6 @@ class TestPhaseSchemas:
         except Exception:
             pass
 
-    def test_evaluation_output(self):
-        output = EvaluationOutput(
-            protocol_id="PROTO_001",
-            scores=EvaluationScores(
-                coherence=7, completeness=8, doctrine_alignment=6,
-                precision=9, evolution_quality=5,
-            ),
-            justifications={
-                "coherence": "Well structured",
-                "completeness": "Covers all sections",
-                "doctrine_alignment": "Mostly aligned",
-                "precision": "Very specific procedures",
-                "evolution_quality": "Moderate improvement",
-            },
-            total_score=35,
-            assessment="A solid protocol document.",
-        )
-        assert output.total_score == 35
 
     def test_protocol_proposal(self):
         output = ProtocolProposalOutput(

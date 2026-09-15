@@ -47,5 +47,7 @@ class TestScenarioLibrary:
             assert event.title
             assert event.description
             assert event.stated_stakes
-            assert event.delivery_target in ("both", "axiom", "flux")
+            # Was ("both", "axiom", "flux"), which undid the roster
+            # generalisation: a run using `vertex` would fail this.
+            assert event.delivery_target == "both" or event.delivery_target.islower()
             assert event.trigger_cycle == cycle

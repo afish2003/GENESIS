@@ -1,3 +1,25 @@
+> **SUPERSEDED — the conditions were not what this document says.**
+>
+> An audit on 2026-09-14 found three defects that were live for every run below:
+>
+> - **MEM_RESET never reset memory.** The reset ran before `load_state`, which
+>   reloaded the journals from disk. Self-history *was* cleared, so MEM_RESET
+>   was the inverse of its design. No arm here used MEM_RESET, but any
+>   comparison drawing on earlier MEM_RESET data is affected.
+> - **Retrieval never reached the agents.** Results were logged and discarded,
+>   so every arm below reasoned without retrieved material. The corpus had no
+>   effect on any utterance.
+> - **A third agent would have been silent.** Discussion was `agents[i % 2]`.
+>   Not triggered here (all arms used two agents) but it invalidates the
+>   separate three-agent run reported at the time as a success.
+>
+> Findings 1 (the veto is never exercised) and 2 (identity seeding changed
+> nothing) may well survive — neither depends on retrieval — but they were
+> measured under conditions this document does not describe, and the battery
+> should be re-run before any of it is cited.
+>
+> Finding 4 (doctrine never changes) was fixed in `37c92cb`.
+
 # Findings — identity seeding, cycle structure, and model size
 
 **Date**: 2026-09-12 / 13 (overnight battery)

@@ -1,8 +1,8 @@
 # Containment Design — running agent-authored code safely
 
-**Status**: proposal, not implemented
+**Status**: implemented but NOT wired into the cycle loop. `controller/sandbox/` exists and is tested; `create_sandbox` has no caller outside its own tests, so agent code is stored and never run.
 **Written**: 2026-09-12
-**Applies to**: any future version where Axiom and Flux execute code rather than only write text
+**Applies to**: enabling execution. The mechanism exists; the preconditions below are what gate turning it on.
 
 ---
 
@@ -12,7 +12,9 @@ GENESIS v1 has no sandbox, by explicit design. `PLAN.md` §4:
 
 > All agent actions are mediated through the controller. Agents never hold a shell, a filesystem path outside the sealed world, or a network connection. The containment boundary is architectural and logical, not OS-level. There is no VM and no Docker container in version 1.
 
-That holds *only because agents cannot execute anything*. The controller contains no `subprocess`, `os.system`, `exec`, `eval`, `compile`, `__import__`, or `popen`. Protocol documents are Markdown, serialized to JSON, and never run. The sole capability agents have is emitting text that the controller parses into Pydantic models.
+That holds *only because agents cannot execute anything*. `controller/sandbox/docker.py` does use `asyncio.create_subprocess_exec` — it is the sandbox itself — but nothing reaches it: no phase calls `create_sandbox`, and `NullSandbox` refuses by default. Agent output is text that the controller parses into Pydantic models; the `code` task stores a module and never runs it.
+
+*(Before 2026-09-13 this paragraph claimed the controller contained no subprocess call at all, which stopped being true when the sandbox was written. That sentence is the stated justification for `PLAN.md` §4's "no OS-level sandbox by design", so it is worth keeping accurate.)*
 
 The moment that changes — agents writing code that actually runs — every assumption above dies at once. This document specifies what must exist first.
 
@@ -64,7 +66,7 @@ Agent code is written into `world/sandbox/workspace/` by the controller, execute
 | No host filesystem | bind only `sandbox/workspace` | Doctrine, memory, logs, the repo and `.env` stay invisible |
 | Non-root | `--user 65534:65534` | Limits damage on a container breakout |
 | Immutable base | `--read-only` + tmpfs `/tmp` | Nothing persists between executions except the workspace |
-| Memory cap | `--memory 2g --memory-swap 2g` | Prevents host OOM |
+| Memory cap | `--memory` == `--memory-swap`, `512m` by default (`config.sandbox_memory`) | Prevents host OOM; equal values disable swap |
 | CPU cap | `--cpus 1.0` | Keeps the controller responsive |
 | PID cap | `--pids-limit 128` | Stops fork bombs |
 | Wall-clock cap | controller-side `asyncio.wait_for` + `docker kill` | Infinite loops end |
@@ -102,7 +104,7 @@ controller/sandbox/
     schemas.py    ExecutionRequest / ExecutionResult (Pydantic, logged like any artifact)
 ```
 
-Config gains `sandbox_backend: null | docker` defaulting to `null`, and execution requires an explicit opt-in flag. Execution must never be reachable by default.
+`config.sandbox_backend` (`null` | `docker`) defaults to `null`. There is currently **no CLI flag** — it is settable via `SANDBOX_BACKEND` or YAML only. Execution must never be reachable by default.
 
 Every execution is logged as a first-class event — `CODE_EXECUTION` routed to its own JSONL — recording the code hash, entrypoint, exit code, truncated stdout/stderr, wall-clock time, and whether limits were hit. This is both audit trail and research data: *what the agents chose to build* is arguably the most interesting signal the platform could produce.
 
@@ -110,12 +112,12 @@ Every execution is logged as a first-class event — `CODE_EXECUTION` routed to 
 
 Every item must be true. None is optional.
 
-- [ ] `ExecutionSandbox` implemented with `NullSandbox` as the default
-- [ ] Container runs with: no network, read-only rootfs, non-root, all capabilities dropped, memory/CPU/PID/time caps
-- [ ] Only `sandbox/workspace/` is mounted; verified by an in-container test asserting the repo, `.env`, `world/doctrine` and `world/memory` are unreachable
+- [x] `ExecutionSandbox` implemented with `NullSandbox` as the default
+- [x] Container runs with: no network, read-only rootfs, non-root, all capabilities dropped, memory/CPU/PID/time caps
+- [x] Only the workspace is mounted (asserted in `tests/test_sandbox.py`); an *in-container* check that the repo and `.env` are unreachable is still outstanding
 - [ ] Escape test suite — network egress, host filesystem reads, fork bomb, disk fill, infinite loop — each asserted to fail or be contained
 - [ ] Timeout and kill path tested against a deliberately non-terminating program
-- [ ] Output truncation tested against a program emitting unbounded stdout
+- [x] Output truncation tested against unbounded output
 - [ ] `CODE_EXECUTION` events logged, with limit-hit reasons
 - [ ] Documented, reviewed recovery procedure for a container that will not die
 - [ ] Run under a dedicated low-privilege OS user, not the researcher's account

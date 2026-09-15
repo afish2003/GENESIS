@@ -19,7 +19,10 @@ class TestWorldState:
     def setup_method(self):
         """Create a temporary world directory from the template."""
         self.tmpdir = Path(tempfile.mkdtemp())
-        self.template_dir = Path("world_template")
+        # world_template/ is a per-run render output and is gitignored, so
+        # this used to fall through to the minimal fixture below and the
+        # real template was never exercised. Use the tracked source.
+        self.template_dir = Path(__file__).parent.parent / "world_template_src"
         self.world_dir = self.tmpdir / "world"
 
         if self.template_dir.exists():

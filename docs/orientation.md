@@ -1,6 +1,6 @@
 # GENESIS — Orientation
 
-**Last verified**: 2026-09-12 (second pass — first real inference run)
+**Last verified**: 2026-09-14 (third pass — post-audit hardening)
 **Purpose of this document**: a single anchor for returning to the project after time away. States what GENESIS is, what is actually built, what is assumed but unverified, and the shortest path to a first run.
 
 Supersedes the status portions of `build_status.md` and `handoff_2026-04-05.md`, both of which date from the April build and are partly stale.
@@ -29,11 +29,11 @@ Verified on 2026-09-12 by running the code, not by reading the April docs.
 
 | | |
 |---|---|
-| Controller | ~3,400 lines, 40 modules, all import cleanly |
-| Tests | 77/77 pass (`test_retrieval.py` excluded — needs `sentence-transformers`) |
+| Controller | ~6,000 lines, 60+ modules, all import cleanly |
+| Tests | 352 pass, no exclusions, including end-to-end cycle tests |
 | Phases | all 14 implemented |
-| Prompts | all 6 written |
-| World template | complete |
+| Prompts | 7 sources in `prompts_src/`, rendered per run |
+| World template | `world_template_src/`, rendered per run |
 | Git | `main` synced with origin, clean tree |
 | venv | `.venv`, Python 3.11.15, all deps except `sentence-transformers` |
 
@@ -64,22 +64,26 @@ This is the gap between "a flexible platform for AI social experiments" and what
 
 Cycle count, model name, Ollama host, both temperatures, retry limit, discussion turns (normal and under scenario), embedding model, rerank top-k, max retrieval queries per agent, protocol length and count caps, scenario injection cycles, memory reset interval and bootstrap text, and all paths. Settable via `.env`, CLI, or a YAML override.
 
-### Hardcoded
+### Now configurable
 
-| What | Where | Difficulty to loosen |
+| Axis | Setting |
+|---|---|
+| Agent roster | `agents` — any number; each needs a prompt and identity source |
+| What they build | `task` — `protocol` or `code` |
+| The cycle order | `phase_sequence` — validated against known dependencies |
+| Whether they know they are studied | `framing` |
+| How much identity is given | `identity_seed` |
+| Model / endpoint | `inference_backend` — ollama / any OpenAI-compatible `/v1` / mock |
+| Doctrine apply semantics | `doctrine_apply_mode` |
+
+### Still hardcoded
+
+| What | Where | Note |
 |---|---|---|
-| Exactly 2 agents, named `axiom`/`flux` | literal `["axiom", "flux"]` in **10 places** across `cycle.py`, `state.py`, and 7 phase modules | Low — mechanical, but touches many files |
-| The 14-phase sequence | 14 sequential `await self._run_phase(...)` calls in `cycle.py:128-186` | Low — `_run_phase` is already a uniform wrapper; becomes a list |
-| The task is "write protocol documents" | baked into `protocol_design.py`, `evaluation.py`, and the evaluator prompt | Medium — needs a task abstraction |
-| Exactly 2 conditions | `Condition` enum, `config.py:15` | Low |
-| One model for all six roles | single `model_name` field | Low |
-
-**No longer hardcoded**: the inference endpoint. `INFERENCE_BACKEND=ollama|openai|mock`
-selects at runtime, and `openai` covers any OpenAI-compatible `/v1` server —
-OpenAI, Ollama's `/v1` shim, LM Studio, llama.cpp, vLLM, Groq, OpenRouter,
-Together — by changing only `API_BASE_URL` and `MODEL_NAME`. `mock` runs the
-whole loop with no model at all, which is the fastest way to check a change
-did not break the cycle.
+| Prompt sources are per-named-agent | `agents/base.py` loads `<agent_id>_system.md` | A new roster entry needs two files written by hand |
+| Exactly two conditions | `Condition` enum | Composable fields would be better |
+| One model for all roles | single `model_name` | |
+| Code is never executed | `create_sandbox` has no caller outside tests | See `containment_design.md` |
 
 **Read this correctly**: the rigidity is *shallow*. It is string literals and a fixed call sequence, not architectural commitment. The hard parts — the inference abstraction, per-phase Pydantic schemas, append-only logging, world-state diffing, checkpoint/resume — are all built and generic. Turning this into a platform is a refactor, not a rewrite.
 
@@ -136,13 +140,16 @@ asyncio.run(t())
 
 **Blocking a real study, not a smoke test:**
 
-- `knowledge_bases/` is empty. `build_kb.py` is written and ready but has no corpus to ingest. Retrieval will return nothing until this is done. Content curation, not code.
+- `technical` knowledge base is empty (arXiv rate-limited during the fetch). `general` and `governance` hold 1,850 documents and retrieval reaches the agents.
 - 8 of ~30 scenario events written. The 8 cover the four main-study injection cycles, so a pilot is unaffected.
 
 **Resolved since the April build:**
 
 - *Doctrine revisions were silently discarded* when `target_document` did not exactly match a filename — approved, logged, then dropped with no warning. Fixed in `704e059`: tolerant resolution plus `applied`/`resolved_document` on every `DOCTRINE_APPROVED`, and a `NOTABLE_EVENT` on any discard.
 - *The "only 1 diff event" worry was a false alarm.* Memory is logged as `MEMORY_SUMMARY` routed to `memory_diffs.jsonl`, not as `ARTIFACT_DIFF`. Nothing is lost.
+- *MEM_RESET never reset memory* until 2026-09-14: the reset ran before `load_state`, which reloaded the journals from disk. Every MEM_RESET arm collected before that date measured BASELINE with a degraded retrieval index.
+- *Retrieval was write-only* until 2026-09-14: results were logged and never entered any prompt. No agent had seen a retrieved document.
+- *Discussion was hardcoded to two agents*; a third was silent but still voted on doctrine.
 
 **Containment** (see `containment_design.md`):
 
@@ -153,7 +160,7 @@ asyncio.run(t())
 **Known fragilities** (from the April audit, still true):
 
 - Any new phase schema with a controller-populated field *must* give that field a default, or Pydantic rejects the model's output. This bit eight schemas once already.
-- `doctrine_revision.py` appends revision text rather than applying a true diff, so doctrine documents grow linearly. Fine for a pilot; a problem at 100 cycles.
+- ~~`doctrine_revision.py` appends revision text~~ — fixed in `37c92cb`; `replace` is the default and `append` exists only to reproduce the 2026-09-12 runs.
 - Agent context = system prompt + identity + doctrine + last 10 memory entries. Grows over a run. `tiktoken` is a dependency but nothing enforces a token budget yet.
 - `controller/world/` was invisible to git until 2026-09-12 (`.gitignore` had `world/`, which also matched `controller/world/`). It got independently reimplemented twice as a result. Fixed in `65564bb`; the pattern is now `/world/`.
 

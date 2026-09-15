@@ -10,7 +10,8 @@ from controller.inference.backend import Message
 from controller.inference.factory import create_backend, describe_backend
 from controller.inference.mock_backend import MockBackend
 from controller.inference.openai_backend import OpenAICompatBackend
-from controller.phases.schemas import EvaluationOutput, MemorySummaryOutput
+from controller.phases.schemas import MemorySummaryOutput
+from controller.tasks import ProtocolTask
 
 
 def _chat_response(content: str = "hello", model: str = "fake") -> dict:
@@ -147,13 +148,13 @@ class TestMockBackend:
 
     @pytest.mark.asyncio
     async def test_satisfies_nested_schema_with_refs(self):
-        """EvaluationOutput nests EvaluationScores via $ref."""
+        """A task's evaluation schema nests its scores model via $ref."""
         b = MockBackend()
         out = await b.complete_structured(
             messages=[Message(role="user", content="evaluate")],
-            response_schema=EvaluationOutput,
+            response_schema=ProtocolTask().evaluation_schema(),
         )
-        assert isinstance(out, EvaluationOutput)
+        assert set(type(out.scores).model_fields) == set(ProtocolTask().dimensions)
 
     @pytest.mark.asyncio
     async def test_counts_calls(self):

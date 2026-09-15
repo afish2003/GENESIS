@@ -94,9 +94,16 @@ class TestContainmentFlags:
     def test_forbidden_never_present(self, forbidden):
         assert forbidden not in self.joined
 
-    def test_repo_and_env_are_not_mounted(self):
-        assert "GENESIS" not in self.joined
-        assert ".env" not in self.joined
+    def test_only_the_workspace_path_appears_as_a_mount(self):
+        """Asserted "GENESIS" not in joined, but _container_args is called with
+        Path("/tmp/ws") so no argument could ever contain it — the test passed
+        regardless of what the code did. Check the mounts directly instead."""
+        mounts = [self.args[i + 1] for i, a in enumerate(self.args) if a == "-v"]
+        assert len(mounts) == 1
+        source = mounts[0].split(":")[0]
+        assert source == "/tmp/ws"
+        for forbidden in ("GENESIS", ".env", "world", "prompts_src"):
+            assert forbidden not in source
 
 
 class TestFilenameFlattening:

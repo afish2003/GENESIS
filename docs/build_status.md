@@ -1,3 +1,10 @@
+> **HISTORICAL — do not read as current status.**
+> This records the 2026-04-05 build. Much of it is now false: the tests run, the
+> knowledge bases are populated, Python 3.11 is installed, the doctrine
+> append strategy was replaced, and the roster, task, phase sequence and
+> inference backend are all configurable.
+> For current state see `docs/orientation.md`.
+
 # GENESIS Build Status
 
 **Last updated**: 2026-04-05

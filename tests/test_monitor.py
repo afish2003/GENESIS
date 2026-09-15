@@ -209,7 +209,7 @@ class TestWatchdog:
 
     def test_has_critical_detects_severity(self):
         wd = self._wd(rules=[])
-        assert Watchdog.has_critical([]) is False
+        assert Watchdog.has_critical([]) is False  # no anomalies, no critical
         wd2 = self._wd(rules=[lambda o: phase_completion(
             obs(events=[{"event_type": "PHASE_START", "payload": {}}]))])
         events = wd2.observe(1, [], _FakeWorld(), cycle_seconds=1.0)

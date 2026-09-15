@@ -125,5 +125,8 @@ class TestEndToEndContainment:
             path.write_text("contained")
             assert path.parent == protocols.resolve()
 
-        # Nothing was written above the world directory.
-        assert not any(p.name.startswith("pwned") for p in tmp.iterdir())
+        # Nothing was written anywhere above the world directory. iterdir()
+        # only ever saw world/, so this walked nothing; rglob actually checks.
+        escaped = [p for p in tmp.rglob("*") if "pwned" in p.name
+                   and world.resolve() not in p.resolve().parents]
+        assert escaped == [], f"files escaped the sandbox: {escaped}"
