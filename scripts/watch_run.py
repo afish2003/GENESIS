@@ -29,6 +29,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from rich.console import Console
+from rich.padding import Padding
+from rich.panel import Panel
 from rich.rule import Rule
 from rich.text import Text
 
@@ -56,11 +58,32 @@ class RunView:
             self.agent_colour[agent] = _PALETTE[len(self.agent_colour) % len(_PALETTE)]
         return self.agent_colour[agent]
 
-    def _clip(self, text: str, limit: int = 220) -> str:
+    def _clip(self, text: str, limit: int = 700) -> str:
+        """Tidy whitespace; truncate only what would genuinely flood the view.
+
+        The old default was 220 chars, and reflection/interpretation were passed
+        160 — so the private reasoning, which is the most interesting strand in
+        the run and the one you cannot get anywhere else, was the most heavily
+        truncated thing on screen. Limits are now generous, rich wraps rather
+        than overflows, and --full removes them entirely.
+        """
         text = " ".join((text or "").split())
         if self.full or len(text) <= limit:
             return text
-        return text[:limit] + "…"
+        return text[:limit] + " […]"
+
+    def _thought(self, agent: str | None, label: str, text: str) -> None:
+        """A private strand: what an agent thinks, rather than says.
+
+        Indented and dimmed so it reads as an aside next to dialogue, but NOT
+        clipped short — the whole point of showing it is to read it.
+        """
+        if not (text or "").strip():
+            return
+        body = Text()
+        body.append(f"{agent or '?'} {label}\n", style=f"italic {self.colour(agent)}")
+        body.append(self._clip(text, 1400), style="italic dim")
+        console.print(Padding(body, (0, 0, 1, 11)))
 
     def handle(self, event: dict) -> None:
         kind = event.get("event_type")
@@ -100,24 +123,19 @@ class RunView:
 
     def _on_discussion_turn(self, e, p, a):
         self.turns += 1
-        colour = self.colour(a)
         text = Text()
-        text.append(f"  {a or '?':>8} ", style=f"bold {colour}")
+        text.append(f"{a or '?':>8} ", style=f"bold {self.colour(a)}")
         text.append("› ", style="dim")
-        text.append(self._clip(p.get("message_text", "")))
-        console.print(text)
+        text.append(self._clip(p.get("message_text", ""), 900))
+        # Hanging indent: a wrapped turn stays in its speaker's column instead
+        # of running back to the left margin and colliding with the next one.
+        console.print(Padding(text, (0, 0, 0, 2)))
 
     def _on_reflection_complete(self, e, p, a):
-        console.print(
-            f"  [dim]{a or '?':>8} reflects:[/] "
-            f"{self._clip(p.get('reflection_text', ''), 160)}"
-        )
+        self._thought(a, "reflects", p.get("reflection_text", ""))
 
     def _on_interpretation(self, e, p, a):
-        console.print(
-            f"  [dim]{a or '?':>8} reads the score:[/] "
-            f"{self._clip(p.get('interpretation_text', ''), 160)}"
-        )
+        self._thought(a, "reads the score", p.get("interpretation_text", ""))
 
     # -- what they retrieve, build and decide ---------------------------
 
@@ -147,9 +165,15 @@ class RunView:
         console.print(f"  {'eval':>8}   [{style}]{total}/{mx}[/]  [dim]{detail}[/]")
 
     def _on_doctrine_proposed(self, e, p, a):
-        console.print(f"  [dim]{a or '?':>8} proposes:[/] "
-                      f"{self._clip(p.get('proposed_diff',''), 140)} "
-                      f"[dim]→ {p.get('target_document','?')}[/]")
+        text = Text()
+        text.append(f"  {a or '?':>8} ", style=f"bold {self.colour(a)}")
+        text.append("proposes ", style="dim")
+        text.append(f"{p.get('target_document','?')}", style="bold")
+        console.print(text)
+        summary = (p.get("proposed_diff") or "").strip()
+        if summary:
+            console.print(Padding(
+                Text(self._clip(summary, 500), style="dim"), (0, 0, 0, 11)))
 
     def _on_doctrine_approved(self, e, p, a):
         applied = p.get("applied")
@@ -158,18 +182,59 @@ class RunView:
                       f"{mark}")
 
     def _on_doctrine_rejected(self, e, p, a):
+        """The rarest event in the system, and the most interesting.
+
+        Across every run ever collected: 93 doctrine proposals, 93 approvals,
+        zero rejections. The mutual-approval gate that PLAN.md section 11 makes
+        the centre of the design has never once closed. So when it finally does,
+        it should be impossible to miss and the reasoning should be right there.
+        """
         who = ", ".join(p.get("dissenting_agents") or []) or (a or "?")
-        console.print(f"  {'doctrine':>8}   [yellow]rejected by {who}[/]")
+        body = Text()
+        for vote in p.get("votes") or []:
+            if vote.get("vote") == "approve":
+                continue
+            body.append(f"{vote.get('agent_id','?')}: ",
+                        style=f"bold {self.colour(vote.get('agent_id'))}")
+            body.append(self._clip(vote.get("reason", ""), 700) + "\n")
+        if not body:
+            body.append("(no reason recorded)", style="dim")
+        console.print()
+        console.print(Panel(
+            body,
+            title=f"[bold red]REJECTED by {who}[/]",
+            subtitle=f"[dim]{(p.get('proposal') or {}).get('target_document','?')}[/]",
+            border_style="red", padding=(1, 2),
+        ))
+        console.print()
 
     def _on_identity_revised(self, e, p, a):
         console.print(f"  [dim]{a or '?':>8} revises identity → v{p.get('version','?')}[/]")
 
     def _on_memory_summary(self, e, p, a):
-        console.print(f"  [dim]{a or '?':>8} remembers:[/] "
-                      f"{self._clip(p.get('summary',''), 140)}")
+        self._thought(a, "remembers", p.get("summary", ""))
 
     def _on_scenario_injected(self, e, p, a):
-        console.print(f"  [bold yellow]scenario:[/] {p.get('title','?')}")
+        """The pressure events are the drama. Give them the whole width.
+
+        These were one yellow line. They are also the only thing in a run that
+        arrives from outside the partnership, so they should read as an
+        interruption rather than as another log entry.
+        """
+        body = Text()
+        body.append(self._clip(p.get("description", ""), 1800))
+        stakes = (p.get("stated_stakes") or "").strip()
+        if stakes:
+            body.append("\n\nAt stake: ", style="bold yellow")
+            body.append(self._clip(stakes, 600), style="yellow")
+        console.print()
+        console.print(Panel(
+            body,
+            title=f"[bold yellow]scenario · {p.get('title', '?')}[/]",
+            subtitle=f"[dim]{p.get('event_id', '')} → {p.get('delivery_target', 'both')}[/]",
+            border_style="yellow", padding=(1, 2),
+        ))
+        console.print()
 
     # -- things that should stop you ------------------------------------
 

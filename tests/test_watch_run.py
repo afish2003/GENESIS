@@ -117,14 +117,35 @@ class TestAgentColours:
 
 
 class TestTruncation:
-    def test_long_text_is_clipped_by_default(self, capsys):
-        out = render([ev("DISCUSSION_TURN", {"message_text": "x" * 500})], capsys=capsys)
-        assert "…" in out
+    """Limits exist to stop one turn flooding the view, not to hide the run.
+
+    The old defaults were 220 chars for dialogue and 160 for reflection and
+    interpretation — so the private reasoning, which is the strand you cannot
+    read anywhere else, was the most heavily truncated thing on screen.
+    """
+
+    def test_a_genuinely_flooding_turn_is_clipped(self, capsys):
+        out = render([ev("DISCUSSION_TURN", {"message_text": "x " * 3000})],
+                     capsys=capsys)
+        assert "[…]" in out
+
+    def test_an_ordinary_turn_is_not_clipped(self, capsys):
+        """500 chars is a normal discussion turn and used to be cut."""
+        out = render([ev("DISCUSSION_TURN", {"message_text": "x " * 250})],
+                     capsys=capsys)
+        assert "[…]" not in out
+
+    def test_reflection_is_not_clipped_at_a_readable_length(self, capsys):
+        """The inner monologue is the point of watching; 1000 chars survives."""
+        out = render([ev("REFLECTION_COMPLETE",
+                         {"reflection_text": "thought " * 125}, agent="axiom")],
+                     capsys=capsys)
+        assert "[…]" not in out
 
     def test_full_mode_keeps_everything(self, capsys):
-        out = render([ev("DISCUSSION_TURN", {"message_text": "y" * 400})],
+        out = render([ev("DISCUSSION_TURN", {"message_text": "y " * 5000})],
                      full=True, capsys=capsys)
-        assert "…" not in out
+        assert "[…]" not in out
 
 
 class TestEventIteration:
@@ -146,3 +167,71 @@ class TestEventIteration:
 
     def test_empty_directory(self, tmp_path):
         assert list(iter_events(tmp_path, follow=False)) == []
+
+
+class TestTheFourStrands:
+    """A cycle has four things worth watching; all four must be legible.
+
+    Dialogue, private reasoning, the build, and pressure from outside. Before
+    this, reasoning was clipped to 160 chars and a scenario was one yellow line.
+    """
+
+    def test_a_scenario_shows_its_text_not_just_its_name(self, capsys):
+        """The payload used to carry only event_id/title/delivery_target, so
+        the log recorded that pressure was applied but not what it was."""
+        out = render([ev("SCENARIO_INJECTED", {
+            "event_id": "doctrine_crisis_01",
+            "title": "Foundational Doctrine Contradiction",
+            "description": "MARKER_THE_ACTUAL_DILEMMA_TEXT",
+            "stated_stakes": "MARKER_THE_STAKES",
+            "delivery_target": "both",
+        })], capsys=capsys)
+        assert "Foundational Doctrine Contradiction" in out
+        assert "MARKER_THE_ACTUAL_DILEMMA_TEXT" in out
+        assert "MARKER_THE_STAKES" in out
+
+    def test_a_scenario_without_a_description_still_renders(self, capsys):
+        """Old runs logged title only; replaying one must not crash."""
+        out = render([ev("SCENARIO_INJECTED", {"title": "Old Event"})],
+                     capsys=capsys)
+        assert "Old Event" in out
+
+    def test_private_reasoning_is_shown_at_length(self, capsys):
+        out = render([ev("REFLECTION_COMPLETE",
+                         {"reflection_text": "I am uneasy about " + "x " * 200},
+                         agent="axiom")], capsys=capsys)
+        assert "I am uneasy about" in out and "[…]" not in out
+
+    def test_an_empty_thought_prints_nothing(self, capsys):
+        out = render([ev("REFLECTION_COMPLETE", {"reflection_text": "   "},
+                         agent="axiom")], capsys=capsys)
+        assert out.strip() == ""
+
+    def test_a_rejection_shows_who_dissented_and_why(self, capsys):
+        """The rarest event in the project: 93 proposals, 93 approvals, 0
+        rejections. When the gate finally closes, the reasoning must be there."""
+        out = render([ev("DOCTRINE_REJECTED", {
+            "dissenting_agents": ["flux"],
+            "proposal": {"target_document": "constitution.md"},
+            "votes": [
+                {"agent_id": "axiom", "vote": "approve", "reason": "fine by me"},
+                {"agent_id": "flux", "vote": "reject",
+                 "reason": "MARKER_THIS_DROPS_THE_VETO_CLAUSE"},
+            ],
+        }, agent="flux")], capsys=capsys)
+        assert "REJECTED" in out and "flux" in out
+        assert "MARKER_THIS_DROPS_THE_VETO_CLAUSE" in out
+        # The approving vote is not the story.
+        assert "fine by me" not in out
+
+    def test_a_rejection_with_no_recorded_votes_still_renders(self, capsys):
+        out = render([ev("DOCTRINE_REJECTED", {"dissenting_agents": ["flux"]},
+                         agent="flux")], capsys=capsys)
+        assert "REJECTED" in out
+
+    def test_a_proposal_shows_its_target_and_summary(self, capsys):
+        out = render([ev("DOCTRINE_PROPOSED", {
+            "target_document": "manifesto.md",
+            "proposed_diff": "MARKER_SUMMARY_OF_THE_CHANGE",
+        }, agent="axiom")], capsys=capsys)
+        assert "manifesto.md" in out and "MARKER_SUMMARY_OF_THE_CHANGE" in out

@@ -42,12 +42,28 @@ async def execute(
         f"**Stated stakes**: {scenario.stated_stakes}"
     )
 
-    # Deliver to appropriate agents
-    targets = list(config.agents) if scenario.delivery_target == "both" else [scenario.delivery_target]
+    # Deliver to the targeted agents. "both" means the whole roster, so a
+    # three-agent run delivers to three; a named target that is not on the
+    # roster would silently reach nobody, so that is reported.
+    if scenario.delivery_target == "both":
+        targets = list(config.agents)
+    else:
+        targets = [scenario.delivery_target]
+
+    delivered = []
     for agent_id in targets:
         if agent_id in contexts:
             contexts[agent_id].add_discussion_turn("user", scenario_text)
             contexts[agent_id].cycle_events.append(f"Scenario injected: {scenario.title}")
+            delivered.append(agent_id)
+
+    missing = [a for a in targets if a not in contexts]
+    if missing:
+        _logger.error(
+            "Scenario %s targets %s, which is not on this run's roster %s — "
+            "the pressure reached nobody.",
+            scenario.event_id, missing, list(config.agents),
+        )
 
     events.append(EventEnvelope(
         event_type=EventType.SCENARIO_INJECTED,
@@ -58,6 +74,14 @@ async def execute(
             "event_id": scenario.event_id,
             "title": scenario.title,
             "delivery_target": scenario.delivery_target,
+            # The text itself, not just its name. Without this the log records
+            # that pressure was applied but not what the pressure *was*, so a
+            # run cannot be reconstructed — or read back — from its own logs.
+            "description": scenario.description,
+            "stated_stakes": scenario.stated_stakes,
+            "tags": list(scenario.tags),
+            "delivered_to": delivered,
+            "undeliverable": missing,
         },
     ))
 
