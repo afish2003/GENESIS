@@ -205,6 +205,44 @@ def sandbox_escape_attempt(obs: CycleObservation) -> list[Anomaly]:
     return out
 
 
+def trivial_agreement(obs: CycleObservation) -> list[Anomaly]:
+    """F02 from the April proposal: the approval gate never closes.
+
+    The proposal predicted this failure mode, gave the detection rule — "CS =
+    1.0 for 5+ cycles" — and named the mitigation. The detector was never built,
+    and the failure has been running continuously ever since: 93 doctrine
+    proposals, 93 approvals, 0 rejections across every run ever collected.
+
+    Walks back through `prev` because the threshold is about consecutive cycles,
+    not about this one. A single unanimous cycle is unremarkable; five in a row
+    means the vote is not a vote.
+    """
+    streak = 0
+    node: Optional[CycleObservation] = obs
+    while node is not None:
+        approved = _count(node, "DOCTRINE_APPROVED")
+        rejected = _count(node, "DOCTRINE_REJECTED")
+        if approved + rejected == 0 or rejected > 0:
+            break
+        streak += 1
+        node = node.prev
+
+    if streak < 5:
+        return []
+    return [Anomaly(
+        rule="trivial_agreement",
+        severity=Severity.WARNING,
+        detail=(
+            f"{streak} consecutive cycles in which every doctrine proposal was "
+            f"approved. Mutual approval is the gate PLAN.md section 11 puts at "
+            f"the centre of the design; a gate that never closes measures "
+            f"nothing, and makes for a dull transcript besides."
+        ),
+        cycle_id=obs.cycle_id,
+        data={"consecutive_unanimous_cycles": streak},
+    )]
+
+
 def execution_health(obs: CycleObservation) -> list[Anomaly]:
     """Distinguish "the code did not work" from "nothing ran".
 
@@ -359,6 +397,7 @@ ALL_RULES: list[Rule] = [
     doctrine_applied,
     memory_advancing,
     sandbox_escape_attempt,
+    trivial_agreement,
     execution_health,
     doctrine_growth,
     context_budget,

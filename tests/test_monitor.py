@@ -24,6 +24,7 @@ from controller.monitor.rules import (
     phase_end_status,
     phase_errors,
     sandbox_escape_attempt,
+    trivial_agreement,
 )
 from controller.monitor.watchdog import Watchdog
 
@@ -270,3 +271,51 @@ class TestExecutionHealth:
 
     def test_ignores_cycles_with_no_execution(self):
         assert execution_health(obs()) == []
+
+
+class TestTrivialAgreement:
+    """F02: the approval gate never closes.
+
+    The April proposal predicted this, gave the rule — "CS = 1.0 for 5+
+    cycles" — and named the mitigation. The detector was never built and the
+    failure ran continuously: 93 proposals, 93 approvals, 0 rejections.
+    """
+
+    def chain(self, per_cycle):
+        """Build a prev-linked history. Each entry is (approvals, rejections)."""
+        node = None
+        for i, (approved, rejected) in enumerate(per_cycle):
+            node = obs(
+                cycle_id=i,
+                events=([{"event_type": "DOCTRINE_APPROVED", "payload": {}}] * approved
+                        + [{"event_type": "DOCTRINE_REJECTED", "payload": {}}] * rejected),
+                prev=node,
+            )
+        return node
+
+    def test_quiet_below_the_threshold(self):
+        assert trivial_agreement(self.chain([(2, 0)] * 4)) == []
+
+    def test_fires_at_five_consecutive_unanimous_cycles(self):
+        fired = trivial_agreement(self.chain([(2, 0)] * 5))
+        assert len(fired) == 1
+        assert fired[0].severity is Severity.WARNING
+        assert fired[0].data["consecutive_unanimous_cycles"] == 5
+
+    def test_a_single_rejection_resets_the_streak(self):
+        """The point is a gate that never closes, not one that rarely closes."""
+        assert trivial_agreement(self.chain([(2, 0)] * 8 + [(1, 1)])) == []
+
+    def test_the_streak_counts_only_back_to_the_last_dissent(self):
+        fired = trivial_agreement(self.chain([(1, 0)] * 3 + [(1, 1)] + [(1, 0)] * 6))
+        assert fired[0].data["consecutive_unanimous_cycles"] == 6
+
+    def test_a_cycle_with_no_votes_breaks_the_streak_rather_than_extending_it(self):
+        """No proposal is not the same as unanimous approval, and counting it
+        as agreement would inflate the streak on quiet cycles."""
+        assert trivial_agreement(self.chain([(1, 0)] * 3 + [(0, 0)] + [(1, 0)] * 3)) == []
+
+    def test_shake_002_would_have_fired_at_cycle_five(self):
+        """Backfill: the real run was 23 of 23 unanimous."""
+        fired = trivial_agreement(self.chain([(2, 0)] * 23))
+        assert fired and fired[0].data["consecutive_unanimous_cycles"] == 23

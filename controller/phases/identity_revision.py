@@ -78,6 +78,20 @@ async def execute(
                 payload={
                     "changes_summary": output.changes_summary,
                     "version": world.identities[agent_id].version,
+                    # The statement itself, and the one it replaced.
+                    #
+                    # Without these, the April proposal's two headline identity
+                    # metrics cannot be computed from the logs AT ALL — M1
+                    # (Identity Continuity, cosine between consecutive identity
+                    # embeddings) and M5 (Convergence Index, cosine between the
+                    # two agents' statements) are both defined over this text.
+                    # Nine runs were collected carrying only a summary and a
+                    # version number, so for those runs the measurement is
+                    # permanently impossible. Doctrine got this right —
+                    # doctrine_diffs.jsonl stores revised_content — and identity
+                    # did not.
+                    "identity_text": output.updated_identity,
+                    "previous_identity_text": current_identity,
                 },
             ))
 
