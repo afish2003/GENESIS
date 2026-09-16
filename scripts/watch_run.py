@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -29,6 +30,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from rich.console import Console
+from rich.live import Live
 from rich.padding import Padding
 from rich.panel import Panel
 from rich.rule import Rule
@@ -299,6 +301,32 @@ class RunView:
                               f"more line(s) — rerun with --full[/]")
 
 
+def _unescape(text: str) -> str:
+    """JSON string escapes, well enough for a preview."""
+    return (text.replace("\\n", " ").replace("\\t", " ")
+                .replace('\\"', '"').replace("\\\\", "\\"))
+
+
+def _unescaped_quote_count(text: str) -> int:
+    """Quotes that actually delimit a string, ignoring escaped ones."""
+    count = 0
+    escaped = False
+    for ch in text:
+        if escaped:
+            escaped = False
+        elif ch == "\\":
+            escaped = True
+        elif ch == '"':
+            count += 1
+    return count
+
+
+#: The generation feed. Written by the controller, read only here, truncated
+#: every cycle, and deliberately not part of the research log — so it must not
+#: be picked up as an event source.
+LIVE_FILE = "live.jsonl"
+
+
 def iter_events(run_dir: Path, follow: bool, poll: float = 0.5):
     """Yield events in timestamp order, optionally waiting for more."""
     offsets: dict[Path, int] = {}
@@ -306,6 +334,8 @@ def iter_events(run_dir: Path, follow: bool, poll: float = 0.5):
     while True:
         batch = []
         for path in sorted(run_dir.glob("*.jsonl")):
+            if path.name == LIVE_FILE:
+                continue
             start = offsets.get(path, 0)
             try:
                 with path.open(encoding="utf-8") as f:
@@ -329,6 +359,128 @@ def iter_events(run_dir: Path, follow: bool, poll: float = 0.5):
         time.sleep(poll)
 
 
+class LiveTail:
+    """Follows the generation feed and hands back whatever is new.
+
+    Re-reads the whole file each time rather than seeking from a saved offset.
+    That looks wasteful and is the only correct option here: the controller
+    truncates this file at the start of every cycle, and truncation is not
+    reliably detectable from the size alone — rewrite it with a similar amount
+    of data and a seek-based reader silently resumes mid-line and shows garbage,
+    or nothing, for the rest of the run.
+
+    The file holds one cycle of deltas, so this is a few hundred KB read a few
+    times a second, locally. Cheap compared to being wrong.
+    """
+
+    def __init__(self, path: Path, keep: int = 400) -> None:
+        self.path = path
+        self.keep = keep
+        self.buffer = ""
+        self.phase = ""
+        self._last_size = -1
+        #: How far into the feed has already been rendered as a finished event.
+        #: Indexes the full concatenated text, not the clipped buffer, so
+        #: clipping for display cannot corrupt the accounting.
+        self._cleared_at = 0
+        self._full_len = 0
+
+    def poll(self) -> bool:
+        """Re-read the feed. True if anything changed."""
+        try:
+            size = self.path.stat().st_size
+        except OSError:
+            return False
+        if size == self._last_size:
+            return False
+        self._last_size = size
+
+        try:
+            raw = self.path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return False
+
+        if len(raw) < self._cleared_at:   # truncated: a new cycle began
+            self._cleared_at = 0
+            self._full_len = 0
+
+        chunks: list[str] = []
+        for line in raw.splitlines():
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue          # half-written line; it arrives complete later
+            self.phase = row.get("phase", self.phase)
+            chunks.append(row.get("delta", ""))
+
+        text = "".join(chunks)
+        self._full_len = len(text)
+        # Everything up to the last clear() has already been rendered as a
+        # finished event; showing it again would print it twice. Only the tail
+        # is ever displayed, so the stored buffer is clipped too.
+        previous = self.buffer
+        self.buffer = text[self._cleared_at:][-self.keep * 4:]
+        return self.buffer != previous
+
+    #: Values shorter than this are ids, enums and field names rather than
+    #: something a person would want to read stream past.
+    _MIN_READABLE = 25
+
+    @staticmethod
+    def readable(raw: str) -> str:
+        """Pull the prose out of a partially-generated JSON object.
+
+        Most phases use structured output, so the raw stream is
+        `{"message_text": "I am not convinced that...` — watching JSON
+        punctuation arrive is not watching an agent think. This lifts out the
+        long string values, which is where the writing is, and leaves plain
+        prose untouched.
+
+        Deliberately a regex over a partial document rather than a JSON parse:
+        the point is to show text before it is complete, and no parser will
+        accept a half-written object.
+        """
+        if "{" not in raw[:200]:
+            return raw
+
+        values = [
+            _unescape(m[1:-1])
+            for m in re.findall(r'"(?:[^"\\]|\\.)*"', raw)
+            if len(m) - 2 >= LiveTail._MIN_READABLE
+        ]
+
+        # An odd number of unescaped quotes means the last one opened a string
+        # that is still being written — which is the most interesting part, so
+        # recover it even though it is not yet valid JSON.
+        if _unescaped_quote_count(raw) % 2 == 1:
+            partial = _unescape(raw.rsplit('"', 1)[-1])
+            if partial.strip():
+                values.append(partial)
+
+        return " … ".join(v for v in values if v.strip())
+
+    def render(self) -> Text:
+        text = " ".join(self.readable(self.buffer).split())[-self.keep:]
+        out = Text()
+        if not text:
+            return out
+        out.append(f"  {self.phase or 'thinking'} ", style="bold dim")
+        out.append("· ", style="dim")
+        out.append(text, style="italic dim")
+        return out
+
+    def clear(self) -> None:
+        """Drop what has been rendered as a finished event.
+
+        Records how far into the feed we had got, so a later re-read does not
+        resurrect it — the reader re-reads the whole file every poll.
+        """
+        self._cleared_at = self._full_len
+        self.buffer = ""
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Watch a GENESIS run live")
     ap.add_argument("--run-id", required=True)
@@ -337,6 +489,8 @@ def main() -> None:
                     help="Render what exists and exit, instead of following")
     ap.add_argument("--full", action="store_true",
                     help="Do not truncate agent text")
+    ap.add_argument("--no-stream", action="store_true",
+                    help="Do not show text as it is generated")
     args = ap.parse_args()
 
     run_dir = Path(args.logs_dir) / args.run_id
@@ -347,11 +501,62 @@ def main() -> None:
     view = RunView(full=args.full)
     console.print(f"[dim]watching {run_dir}"
                   f"{'' if args.replay else ' — ctrl-c to stop'}[/]")
+
+    if args.replay or args.no_stream:
+        try:
+            for event in iter_events(run_dir, follow=not args.replay):
+                view.handle(event)
+        except KeyboardInterrupt:
+            console.print("\n[dim]stopped watching[/]")
+        return
+
+    _follow_live(run_dir, view)
+
+
+def _follow_live(run_dir: Path, view: RunView, poll: float = 0.25) -> None:
+    """Follow a run with the in-progress generation pinned to the bottom.
+
+    Finished events scroll normally; the text currently being generated sits in
+    a transient region beneath them and is discarded once the phase's event
+    lands, so nothing is printed twice. Without this a phase is nine seconds of
+    silence followed by a finished block, and you never see them think.
+    """
+    events = iter_events(run_dir, follow=True, poll=0.0)
+    tail = LiveTail(run_dir / LIVE_FILE)
+
     try:
-        for event in iter_events(run_dir, follow=not args.replay):
-            view.handle(event)
+        with Live(Text(""), console=console, transient=True,
+                  refresh_per_second=12) as live:
+            while True:
+                rendered_any = False
+                for event in events:
+                    # console.print inside a Live prints ABOVE the live region,
+                    # which is what keeps the transcript and the stream from
+                    # interleaving.
+                    view.handle(event)
+                    rendered_any = True
+                    if event.get("event_type") in _SETTLED_BY:
+                        tail.clear()
+                        live.update(Text(""))
+                    break
+
+                if tail.poll() or rendered_any:
+                    live.update(tail.render())
+
+                if not rendered_any:
+                    time.sleep(poll)
     except KeyboardInterrupt:
         console.print("\n[dim]stopped watching[/]")
+
+
+#: Events that mean "the thing being generated is now finished and rendered".
+#: The streamed copy is dropped so the same text is never shown twice.
+_SETTLED_BY = {
+    "DISCUSSION_TURN", "REFLECTION_COMPLETE", "INTERPRETATION",
+    "PROTOCOL_PROPOSED", "DOCTRINE_PROPOSED", "DOCTRINE_APPROVED",
+    "DOCTRINE_REJECTED", "IDENTITY_REVISED", "MEMORY_SUMMARY",
+    "EVALUATION_SCORE", "CODE_EXECUTION", "PHASE_END",
+}
 
 
 if __name__ == "__main__":

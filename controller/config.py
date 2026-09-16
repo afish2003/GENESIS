@@ -222,6 +222,14 @@ class RunConfig(BaseModel):
         description="The size sandbox_project_dir is expected to be. Checked "
                     "against the actual filesystem, not trusted.",
     )
+    stream_live: bool = Field(
+        default=True,
+        description="Write generation deltas to <run>/live.jsonl so "
+                    "scripts/watch_run.py can show text as it is produced "
+                    "instead of a finished block after each phase. A view "
+                    "artifact only — it is not routed through the research "
+                    "logs, is truncated every cycle, and nothing reads it back.",
+    )
     execution_enabled: bool = Field(
         default=False,
         description="Add the `execution` phase to the default sequence, running "
@@ -432,6 +440,7 @@ def load_config(
         "SANDBOX_PROJECT_SIZE": "sandbox_project_size",
         "SANDBOX_TIMEOUT_SECONDS": "sandbox_timeout_seconds",
         "EXECUTION_ENABLED": "execution_enabled",
+        "STREAM_LIVE": "stream_live",
         "INDEPENDENT_PROPOSALS": "independent_proposals",
         "DOCTRINE_APPLY_MODE": "doctrine_apply_mode",
         "WATCHDOG_ENABLED": "watchdog_enabled",

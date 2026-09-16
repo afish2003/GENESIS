@@ -19,6 +19,7 @@ is configured the Authorization header is omitted entirely.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from typing import Optional
 
@@ -90,6 +91,11 @@ class OpenAICompatBackend(InferenceBackend):
             headers=headers,
         )
 
+    @property
+    def prefers_json_mode(self) -> bool:
+        """Constrain structured calls when the endpoint supports it."""
+        return self.json_mode and self._json_mode_supported
+
     async def complete(
         self,
         messages: list[Message],
@@ -103,11 +109,21 @@ class OpenAICompatBackend(InferenceBackend):
             "temperature": temperature,
             "stream": False,
         }
-        # force_json is set by complete_structured on a retry, after the
-        # unconstrained attempt produced something unparseable.
-        want_json = (self.json_mode or force_json) and self._json_mode_supported
+        # Only when the CALLER wants JSON. `self.json_mode` used to be OR'd in
+        # here, which applied response_format to every call the backend made —
+        # including retrieval's prose summariser, which then returned "{}".
+        # Structured calls opt in through complete_structured via
+        # prefers_json_mode; free-form calls never do.
+        want_json = force_json and self._json_mode_supported
         if want_json:
             payload["response_format"] = {"type": "json_object"}
+
+        if self.stream_sink is not None:
+            streamed = await self._complete_streaming(payload)
+            if streamed is not None:
+                return streamed
+            # Streaming failed; fall through to the ordinary request rather
+            # than failing the phase. A view feature must never cost a run.
 
         try:
             response = await self._request_with_retry(payload)
@@ -146,6 +162,74 @@ class OpenAICompatBackend(InferenceBackend):
             prompt_tokens=usage.get("prompt_tokens"),
             completion_tokens=usage.get("completion_tokens"),
         )
+
+    async def _complete_streaming(self, payload: dict) -> Optional[InferenceResult]:
+        """Stream the completion, feeding deltas to `stream_sink` as they land.
+
+        Returns None if streaming did not work, so the caller can fall back to a
+        normal request. Deliberately not retried: this path exists to make a run
+        watchable, and a view feature must never be the reason a run fails.
+
+        Note the sink is called from inside the response loop, so it must be
+        cheap and must not raise — the orchestrator's sink appends to a file and
+        swallows its own errors.
+        """
+        url = f"{self.base_url}/chat/completions"
+        body = {**payload, "stream": True}
+        chunks: list[str] = []
+        usage: dict = {}
+        model = self.model
+
+        try:
+            async with self._client.stream("POST", url, json=body) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if not data or data == "[DONE]":
+                        continue
+                    try:
+                        parsed = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    model = parsed.get("model", model)
+                    usage = parsed.get("usage") or usage
+                    for choice in parsed.get("choices") or []:
+                        piece = (choice.get("delta") or {}).get("content")
+                        if piece:
+                            chunks.append(piece)
+                            self._emit(piece)
+        except Exception as e:
+            logger.warning(
+                "Streaming failed against %s (%s: %s); falling back to a "
+                "blocking request for this call.", self.base_url, type(e).__name__, e,
+            )
+            return None
+
+        if not chunks:
+            return None
+
+        content = "".join(chunks)
+        return InferenceResult(
+            content=content,
+            model=model,
+            total_duration_ms=None,
+            prompt_tokens=usage.get("prompt_tokens"),
+            completion_tokens=usage.get("completion_tokens"),
+        )
+
+    def _emit(self, delta: str) -> None:
+        """Hand one delta to the sink, never letting it break generation."""
+        sink = self.stream_sink
+        if sink is None:
+            return
+        try:
+            sink(delta)
+        except Exception:
+            logger.debug("stream_sink raised; dropping it for this run",
+                         exc_info=True)
+            self.stream_sink = None
 
     @staticmethod
     def _is_response_format_rejection(error: "httpx.HTTPStatusError") -> bool:

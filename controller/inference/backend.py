@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from abc import ABC, abstractmethod
-from typing import Any, Type, TypeVar
+from typing import Any, Callable, Optional, Type, TypeVar
 
 from pydantic import BaseModel
 
@@ -76,6 +76,25 @@ class InferenceBackend(ABC):
     structured_retries: int = 0
     structured_failures: int = 0
 
+    @property
+    def prefers_json_mode(self) -> bool:
+        """Whether this backend should constrain decoding on structured calls.
+
+        Separate from `force_json` because the two questions are different:
+        "does this endpoint support JSON mode" is a property of the backend,
+        "does THIS call want JSON" is a property of the caller. Conflating them
+        applied response_format to free-form calls as well — a prose summary
+        asked for under json_object comes back as `{}`.
+        """
+        return False
+
+    #: Set by the orchestrator to receive generation deltas as they arrive.
+    #: When it is None the backend makes an ordinary blocking request, so
+    #: nothing about a normal run changes. Its only purpose is watchability:
+    #: a phase otherwise appears as nine seconds of silence followed by a
+    #: finished block, and you never see the agents think.
+    stream_sink: "Optional[Callable[[str], None]]" = None
+
     @abstractmethod
     async def complete(
         self,
@@ -141,11 +160,10 @@ class InferenceBackend(ABC):
             result = await self.complete(
                 augmented,
                 temperature=self.retry_temperature(temperature, attempt),
-                # Constrain decoding once the free-form attempt has failed. Not
-                # on the first attempt: where the endpoint supports it at all it
-                # can flatten the output, and these phases are meant to be the
-                # inventive ones.
-                force_json=attempt > 0,
+                # Structured calls are the only ones that want JSON. On a
+                # retry, constrain regardless — that is the measured fix for an
+                # unparseable response (1/6 -> 5/6 on qwen2.5:7b).
+                force_json=self.prefers_json_mode or attempt > 0,
             )
 
             last_content = result.content

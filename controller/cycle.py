@@ -7,6 +7,7 @@ and AgentContexts and returns events to log.
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 import time
@@ -115,6 +116,14 @@ class CycleOrchestrator:
         self._cycle_events: list[EventEnvelope] = []
         #: Carried between cycles so agents can see what their last program did.
         self._last_execution: Optional[dict] = None
+        #: Where generation deltas go while a phase runs. Deliberately NOT in
+        #: EVENT_FILE_ROUTING: this is a view artifact, not research data. It is
+        #: truncated every cycle, safe to delete at any time, and nothing in the
+        #: controller ever reads it. The append-only guarantee on the real logs
+        #: stays exactly as it was.
+        self._live_path = config.run_log_dir / "live.jsonl"
+        self._live_phase = ""
+        self._live_cycle = 0
 
     async def run_all_cycles(self, start_cycle: int = 0) -> None:
         """Execute all cycles from start_cycle to total_cycles."""
@@ -162,6 +171,35 @@ class CycleOrchestrator:
             "completed_cycles": self.config.total_cycles,
         })
 
+    def _open_live_stream(self, cycle_id: int) -> None:
+        """Start this cycle's live feed, discarding the last one.
+
+        Truncated per cycle on purpose. Streaming is only useful while it is
+        happening — the structured logs hold the history, and an untruncated
+        feed would be roughly 8,000 lines per cycle for the life of the run.
+        """
+        if not self.config.stream_live:
+            return
+        try:
+            self._live_path.parent.mkdir(parents=True, exist_ok=True)
+            self._live_path.write_text("", encoding="utf-8")
+        except OSError as e:
+            logger.warning("Could not open the live feed at %s: %s", self._live_path, e)
+            return
+        self.backend.stream_sink = self._write_delta
+
+    def _write_delta(self, delta: str) -> None:
+        """Append one generation delta. Must be cheap and must not raise."""
+        try:
+            with open(self._live_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "phase": self._live_phase,
+                    "cycle_id": self._live_cycle,
+                    "delta": delta,
+                }) + "\n")
+        except OSError:
+            pass
+
     async def _check_sandbox(self) -> None:
         """Say once, at the top of the run, whether execution can actually work.
 
@@ -198,6 +236,8 @@ class CycleOrchestrator:
         """Execute a single cycle (all 14 phases)."""
         cycle_started = time.monotonic()
         self._cycle_events = []
+        self._live_cycle = cycle_id
+        self._open_live_stream(cycle_id)
         logger.info("=== Cycle %d ===", cycle_id)
         self._log_event(EventType.CYCLE_START, cycle_id)
 
@@ -268,6 +308,7 @@ class CycleOrchestrator:
     ) -> None:
         """Run a single phase with logging."""
         self._log_event(EventType.PHASE_START, cycle_id, payload={"phase": phase_name})
+        self._live_phase = phase_name
         cycle.pending_events.clear()
         failure: Exception | None = None
 

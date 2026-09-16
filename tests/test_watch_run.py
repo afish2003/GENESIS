@@ -235,3 +235,155 @@ class TestTheFourStrands:
             "proposed_diff": "MARKER_SUMMARY_OF_THE_CHANGE",
         }, agent="axiom")], capsys=capsys)
         assert "manifesto.md" in out and "MARKER_SUMMARY_OF_THE_CHANGE" in out
+
+
+class TestLiveTail:
+    """Following the generation feed.
+
+    The controller truncates this file at the start of every cycle, so the
+    reader must notice it shrinking. A reader that only ever seeks forward goes
+    permanently silent after cycle 0 — and silently, which is the worst kind.
+    """
+
+    def _tail(self, tmp_path):
+        from watch_run import LiveTail
+
+        path = tmp_path / "live.jsonl"
+        path.write_text("", encoding="utf-8")
+        return LiveTail(path), path
+
+    def _write(self, path, *deltas, phase="discussion"):
+        with path.open("a", encoding="utf-8") as f:
+            for d in deltas:
+                f.write(json.dumps({"phase": phase, "cycle_id": 0, "delta": d}) + "\n")
+
+    def test_nothing_to_read_is_not_an_error(self, tmp_path):
+        tail, _ = self._tail(tmp_path)
+        assert tail.poll() is False
+        assert str(tail.render()) == ""
+
+    def test_a_missing_file_is_not_an_error(self, tmp_path):
+        from watch_run import LiveTail
+
+        assert LiveTail(tmp_path / "absent.jsonl").poll() is False
+
+    def test_deltas_accumulate_into_readable_text(self, tmp_path):
+        tail, path = self._tail(tmp_path)
+        self._write(path, "Hello", " there", ", partner")
+        assert tail.poll() is True
+        assert "Hello there, partner" in str(tail.render())
+
+    def test_the_phase_label_is_carried(self, tmp_path):
+        tail, path = self._tail(tmp_path)
+        self._write(path, "x", phase="reflection")
+        tail.poll()
+        assert "reflection" in str(tail.render())
+
+    def test_truncation_restarts_the_reader(self, tmp_path):
+        """The bug this guards: after cycle 0 the file shrinks, and a
+        forward-only reader sits past EOF showing nothing for the whole run."""
+        tail, path = self._tail(tmp_path)
+        self._write(path, "first cycle text")
+        tail.poll()
+        assert "first cycle text" in str(tail.render())
+
+        path.write_text("", encoding="utf-8")          # new cycle
+        self._write(path, "second cycle text")
+        assert tail.poll() is True
+        rendered = str(tail.render())
+        assert "second cycle text" in rendered
+        assert "first cycle" not in rendered
+
+    def test_a_half_written_line_is_skipped_not_fatal(self, tmp_path):
+        tail, path = self._tail(tmp_path)
+        with path.open("a", encoding="utf-8") as f:
+            f.write('{"phase": "x", "delta": "good"}\n{"phase": "x", "del')
+        assert tail.poll() is True
+        assert "good" in str(tail.render())
+
+    def test_the_buffer_does_not_grow_without_bound(self, tmp_path):
+        tail, path = self._tail(tmp_path)
+        self._write(path, *["word " * 50 for _ in range(200)])
+        tail.poll()
+        assert len(tail.buffer) <= tail.keep * 4 + 16
+
+    def test_clear_drops_the_streamed_copy(self, tmp_path):
+        """Called when the finished event renders, so nothing prints twice."""
+        tail, path = self._tail(tmp_path)
+        self._write(path, "some text")
+        tail.poll()
+        tail.clear()
+        assert str(tail.render()) == ""
+
+
+class TestLiveFeedIsNotResearchData:
+    def test_the_event_iterator_ignores_it(self, tmp_path):
+        """live.jsonl rows have no event_type and no timestamp. Treating them
+        as events would reorder the transcript around rows that sort as ''."""
+        from watch_run import LIVE_FILE, iter_events
+
+        (tmp_path / "transcripts.jsonl").write_text(
+            json.dumps(ev("DISCUSSION_TURN", {"message_text": "real"})) + "\n",
+            encoding="utf-8")
+        (tmp_path / LIVE_FILE).write_text(
+            json.dumps({"phase": "discussion", "delta": "partial"}) + "\n",
+            encoding="utf-8")
+
+        events = list(iter_events(tmp_path, follow=False))
+        assert len(events) == 1
+        assert events[0]["event_type"] == "DISCUSSION_TURN"
+
+
+class TestReadableStream:
+    """Most phases emit structured output, so the raw stream is JSON.
+
+    Watching `{"message_text": "` arrive character by character is not watching
+    an agent think. The preview lifts out the prose.
+    """
+
+    def readable(self, raw):
+        from watch_run import LiveTail
+
+        return LiveTail.readable(raw)
+
+    def test_plain_prose_is_untouched(self):
+        text = "Plain prose streaming in normally, no JSON anywhere."
+        assert self.readable(text) == text
+
+    def test_a_completed_field_yields_its_value(self):
+        raw = ('{"message_text": "I am not convinced the evaluation feedback '
+               'supports that change", "references": []}')
+        assert self.readable(raw) == (
+            "I am not convinced the evaluation feedback supports that change")
+
+    def test_a_field_still_being_written_is_shown(self):
+        """The most interesting part is the part not finished yet."""
+        raw = '{"message_text": "We should refine the protocol docum'
+        assert self.readable(raw) == "We should refine the protocol docum"
+
+    def test_a_complete_object_does_not_leak_punctuation(self):
+        """The first version appended the text after the last quote
+        unconditionally, so a finished object showed a trailing ': []}'."""
+        raw = ('{"message_text": "A sufficiently long value to be shown here", '
+               '"refs": []}')
+        assert "]}" not in self.readable(raw)
+        assert ":" not in self.readable(raw)
+
+    def test_escaped_quotes_survive(self):
+        raw = ('{"t": "He said \\"no\\" to the revision, which I think was '
+               'the right call"}')
+        assert self.readable(raw) == (
+            'He said "no" to the revision, which I think was the right call')
+
+    def test_short_values_are_not_shown(self):
+        """Ids, enums and field names are not reading material."""
+        assert self.readable('{"action": "create", "id": "x1", "n": 3}') == ""
+
+    def test_empty_input_is_empty_output(self):
+        assert self.readable("") == ""
+
+    def test_several_long_fields_are_joined(self):
+        raw = ('{"a": "the first sufficiently long passage of writing here", '
+               '"b": "the second sufficiently long passage of writing here"}')
+        out = self.readable(raw)
+        assert "first sufficiently long" in out and "second sufficiently long" in out

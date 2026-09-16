@@ -71,7 +71,14 @@ class TestOpenAICompatBackend:
         await b.close()
 
     @pytest.mark.asyncio
-    async def test_json_mode_opt_in(self):
+    async def test_json_mode_does_not_constrain_a_free_form_call(self):
+        """json_mode is a property of the endpoint, not of every call.
+
+        It used to be OR'd straight into complete(), so response_format reached
+        every request the backend made — including retrieval's prose
+        summariser, which then came back as "{}". Structured calls opt in via
+        prefers_json_mode; free-form calls never do.
+        """
         seen = {}
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -79,9 +86,30 @@ class TestOpenAICompatBackend:
             return httpx.Response(200, json=_chat_response())
 
         b = _backend_with(handler, json_mode=True)
-        await b.complete([Message(role="user", content="u")])
+        await b.complete([Message(role="user", content="summarise this prose")])
+        assert "response_format" not in seen["body"]
+        await b.close()
+
+    @pytest.mark.asyncio
+    async def test_a_caller_asking_for_json_gets_it(self):
+        seen = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen["body"] = json.loads(request.content)
+            return httpx.Response(200, json=_chat_response())
+
+        b = _backend_with(handler, json_mode=True)
+        await b.complete([Message(role="user", content="u")], force_json=True)
         assert seen["body"]["response_format"] == {"type": "json_object"}
         await b.close()
+
+    def test_structured_calls_opt_in_when_the_endpoint_supports_it(self):
+        b = OpenAICompatBackend(base_url="https://x/v1", model="m", json_mode=True)
+        assert b.prefers_json_mode is True
+
+    def test_structured_calls_do_not_opt_in_when_json_mode_is_off(self):
+        b = OpenAICompatBackend(base_url="https://x/v1", model="m", json_mode=False)
+        assert b.prefers_json_mode is False
 
     def test_auth_header_present_when_key_set(self):
         b = OpenAICompatBackend(base_url="https://x/v1", model="m", api_key="sk-abc")
