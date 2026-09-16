@@ -307,6 +307,27 @@ class RunConfig(BaseModel):
     )
     knowledge_bases_dir: Path = Field(default=Path("./knowledge_bases"))
 
+    @field_validator("sandbox_project_dir")
+    @classmethod
+    def _expand_project_dir(cls, v: Optional[Path]) -> Optional[Path]:
+        """Expand ~ once, here, so every consumer sees the same absolute path.
+
+        This was resolved in two places and expanded in only one.
+        `resolve_project_volume` called `.expanduser()`, so the volume mounted
+        correctly and the container really did get /project — while
+        `CodeTask._project_tree` did a bare `Path(root).is_dir()` on the literal
+        string "~/genesis_project", got False, and returned an empty tree. The
+        agents were never told the directory existed.
+
+        The run looked healthy from every angle: the mount was there, the
+        sandbox was configured, the volume was verified. The only symptom was
+        an empty project directory, which reads exactly like agents choosing
+        not to use it — and that is what I concluded, wrongly, twice.
+        """
+        if v is None:
+            return None
+        return Path(v).expanduser()
+
     @field_validator("agents")
     @classmethod
     def _validate_roster(cls, v: list[str]) -> list[str]:

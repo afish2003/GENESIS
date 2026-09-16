@@ -201,3 +201,58 @@ class TestAgentsAreToldAboutIt:
 
         prompt = CodeTask().design_prompt(cfg(tmp_path), W(), None)
         assert "/project" not in prompt
+
+
+class TestPathExpansion:
+    """`~` must expand once, at config load, not per consumer.
+
+    It was resolved in two places and expanded in one. resolve_project_volume
+    called .expanduser(), so the volume mounted and the container really did get
+    /project — while CodeTask._project_tree did a bare Path(root).is_dir() on
+    the literal string "~/genesis_project", got False, and returned an empty
+    tree. The agents were never told the directory existed.
+
+    Every visible signal said healthy: volume verified, mount present, sandbox
+    configured. The only symptom was an empty project directory, which is
+    indistinguishable from agents deciding not to use it — and that is what I
+    concluded from it, twice.
+    """
+
+    def test_a_tilde_path_is_expanded(self):
+        config = RunConfig(run_id="P", condition="BASELINE",
+                           sandbox_project_dir="~/genesis_project")
+        assert str(config.sandbox_project_dir).startswith(str(Path.home()))
+        assert "~" not in str(config.sandbox_project_dir)
+
+    def test_an_absolute_path_is_left_alone(self, tmp_path):
+        config = RunConfig(run_id="P", condition="BASELINE",
+                           sandbox_project_dir=tmp_path)
+        assert config.sandbox_project_dir == tmp_path
+
+    def test_none_stays_none(self):
+        config = RunConfig(run_id="P", condition="BASELINE")
+        assert config.sandbox_project_dir is None
+
+    def test_the_design_prompt_sees_the_same_directory_the_sandbox_mounts(
+            self, tmp_path, monkeypatch):
+        """The two consumers must agree. This is the actual bug."""
+        from controller.tasks import CodeTask
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / "built_last_cycle.py").write_text("x = 1")
+
+        # expanduser() reads $HOME, not Path.home(), so patch the environment.
+        monkeypatch.setenv("HOME", str(tmp_path))
+        config = RunConfig(
+            run_id="P", condition="BASELINE", execution_enabled=True,
+            sandbox_backend="docker", sandbox_project_dir="~/proj",
+            world_dir=tmp_path / "w", research_logs_dir=tmp_path / "l",
+        )
+        pretend_filesystem_size(monkeypatch, 32 * 1024 ** 3)
+
+        volume = resolve_project_volume(config)
+        tree = CodeTask._project_tree(config)
+        assert volume is not None
+        assert "built_last_cycle.py" in tree
+        assert volume.path == project.resolve()
