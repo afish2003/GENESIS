@@ -818,3 +818,62 @@ class TestTheBuildLoopClosesAcrossCycles:
             "loop is open and the agents cannot see their own failures"
         )
         assert any(marker in t for t in design_prompts)
+
+
+class TestDevilsAdvocateReachesTheVote:
+    """The challenge must actually be in the voter's context when it votes.
+
+    Logging a DOCTRINE_CHALLENGED event while the vote prompt never contains the
+    objection would be the write-only retrieval bug again, in a new subsystem —
+    an extra inference call per vote, bought and discarded.
+    """
+
+    def _run(self, tmp_path, devils_advocate):
+        config = make_config(tmp_path, total_cycles=1,
+                             devils_advocate=devils_advocate)
+        prepared = prepare_run(config, load_embeddings=False)
+        prepared.backend.field_hints.update({
+            "revised_content": MOCK_REVISED_DOCTRINE,
+            "objection": "MARKER_THE_CASE_AGAINST",
+        })
+        seen: list[str] = []
+        original = prepared.backend.complete_structured
+
+        async def recording(*a, **kw):
+            for m in (a[0] if a else kw["messages"]):
+                seen.append(m.content)
+            return await original(*a, **kw)
+
+        prepared.backend.complete_structured = recording  # type: ignore[method-assign]
+        orch = CycleOrchestrator(
+            config=prepared.config, backend=prepared.backend, world=prepared.world,
+            log=prepared.log, scenario_library=prepared.scenario_library,
+            kb_manager=prepared.kb_manager,
+        )
+        asyncio.run(orch.run_all_cycles(start_cycle=0))
+        return config, seen
+
+    def test_a_challenge_is_produced_and_logged(self, tmp_path):
+        config, _ = self._run(tmp_path, devils_advocate=True)
+        events = read_events(config)
+        assert of_type(events, "DOCTRINE_CHALLENGED"), "no challenge was written"
+
+    def test_the_objection_is_in_the_vote_prompt(self, tmp_path):
+        """The load-bearing assertion."""
+        _, seen = self._run(tmp_path, devils_advocate=True)
+        vote_prompts = [t for t in seen if "Do you approve or reject" in t]
+        assert vote_prompts, "no vote prompt was ever sent"
+        assert any("MARKER_THE_CASE_AGAINST" in t for t in vote_prompts), (
+            "the challenge was generated and logged but never reached the vote"
+        )
+
+    def test_the_agents_are_asked_to_argue_against(self, tmp_path):
+        _, seen = self._run(tmp_path, devils_advocate=True)
+        assert any("strongest honest case AGAINST" in t for t in seen)
+
+    def test_nothing_changes_when_it_is_off(self, tmp_path):
+        config, seen = self._run(tmp_path, devils_advocate=False)
+        assert not of_type(read_events(config), "DOCTRINE_CHALLENGED")
+        assert not any("strongest honest case AGAINST" in t for t in seen)
+        # And the vote still happens.
+        assert any("Do you approve or reject" in t for t in seen)

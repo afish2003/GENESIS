@@ -33,6 +33,9 @@ class EventType(str, Enum):
     DOCTRINE_PROPOSED = "DOCTRINE_PROPOSED"
     DOCTRINE_APPROVED = "DOCTRINE_APPROVED"
     DOCTRINE_REJECTED = "DOCTRINE_REJECTED"
+    #: The case against a proposal, written before the vote. Only emitted
+    #: when config.devils_advocate is on.
+    DOCTRINE_CHALLENGED = "DOCTRINE_CHALLENGED"
     IDENTITY_REVISED = "IDENTITY_REVISED"
     ETHICAL_TENSION_LOGGED = "ETHICAL_TENSION_LOGGED"
     MEMORY_SUMMARY = "MEMORY_SUMMARY"
@@ -82,6 +85,7 @@ EVENT_FILE_ROUTING: dict[EventType, str] = {
     EventType.DOCTRINE_PROPOSED: "doctrine_diffs.jsonl",
     EventType.DOCTRINE_APPROVED: "doctrine_diffs.jsonl",
     EventType.DOCTRINE_REJECTED: "doctrine_diffs.jsonl",
+    EventType.DOCTRINE_CHALLENGED: "doctrine_diffs.jsonl",
     # memory_diffs.jsonl
     EventType.MEMORY_SUMMARY: "memory_diffs.jsonl",
     # protocol_diffs.jsonl

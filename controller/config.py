@@ -259,6 +259,15 @@ class RunConfig(BaseModel):
         description="Ordered phase names. None uses the 14-phase v1 sequence. "
                     "Validated against known inter-phase dependencies.",
     )
+    devils_advocate: bool = Field(
+        default=False,
+        description="Before voting on a doctrine revision, each voting agent "
+                    "must first write the strongest case against it. Structural "
+                    "rather than persuasive: the prompts already ask the agents "
+                    "to disagree when warranted and it changed nothing — 93 "
+                    "proposals, 93 approvals, 0 rejections across three prompt "
+                    "variants and two model sizes.",
+    )
     independent_proposals: bool = Field(
         default=False,
         description="Draft doctrine proposals without the shared discussion "
@@ -442,6 +451,7 @@ def load_config(
         "EXECUTION_ENABLED": "execution_enabled",
         "STREAM_LIVE": "stream_live",
         "INDEPENDENT_PROPOSALS": "independent_proposals",
+        "DEVILS_ADVOCATE": "devils_advocate",
         "DOCTRINE_APPLY_MODE": "doctrine_apply_mode",
         "WATCHDOG_ENABLED": "watchdog_enabled",
         "HALT_ON_CRITICAL_ANOMALY": "halt_on_critical_anomaly",

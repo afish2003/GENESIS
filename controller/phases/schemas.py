@@ -159,6 +159,23 @@ class DoctrineVote(BaseModel):
     reason: str
 
 
+class DoctrineChallenge(BaseModel):
+    """The strongest case against a proposal, written before voting on it.
+
+    One field on purpose. The obvious richer schema — asking for severity, or
+    whether the objection is decisive — pre-commits the vote inside the
+    challenge, which is the sycophancy this exists to break, only moved one step
+    earlier.
+    """
+
+    agent_id: str = Field(default="", description="Set by controller after parsing")
+    objection: str = Field(
+        ...,
+        description="The strongest argument against the proposal, written "
+                    "whether or not the author ultimately agrees with it",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Phase 11: Identity Revision
 # ---------------------------------------------------------------------------

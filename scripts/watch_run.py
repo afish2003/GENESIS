@@ -183,6 +183,19 @@ class RunView:
         console.print(f"  {'doctrine':>8}   {p.get('resolved_document') or p.get('requested_document','?')} "
                       f"{mark}")
 
+    def _on_doctrine_challenged(self, e, p, a):
+        """The case against, written before the vote. Only in devil's-advocate runs."""
+        objection = (p.get("objection") or "").strip()
+        if not objection:
+            return
+        text = Text()
+        text.append(f"  {a or '?':>8} ", style=f"bold {self.colour(a)}")
+        text.append("argues against ", style="dim")
+        text.append(f"{p.get('target_document','?')}", style="bold")
+        console.print(text)
+        console.print(Padding(
+            Text(self._clip(objection, 900), style="yellow"), (0, 0, 1, 11)))
+
     def _on_doctrine_rejected(self, e, p, a):
         """The rarest event in the system, and the most interesting.
 

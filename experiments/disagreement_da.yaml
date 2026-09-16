@@ -1,0 +1,35 @@
+# Devil's-advocate arm. Identical to disagreement_control.yaml except for the
+# single line at the bottom.
+#
+# Before voting on a doctrine revision, each voting agent must first write the
+# strongest case against it, and that objection is then in its context when it
+# votes. Structural rather than persuasive: the system prompts already say
+# "When you disagree with Flux, say so directly" and call the tension between
+# the agents "a design feature, not a bug", and across three prompt variants and
+# two model sizes that produced 93 approvals out of 93.
+#
+# What would make this result uninteresting: if it produces rejections in nearly
+# every cycle. That would mean the phase manufactures disagreement rather than
+# surfacing it, and it would be measuring the prompt. The vote prompt is written
+# so neither answer is the expected one — an objection that survives is grounds
+# to reject, an objection that does not is grounds to approve with more
+# confidence, and saying which is the job.
+
+task: code
+execution_enabled: true
+sandbox_backend: docker
+sandbox_image: python:3.11-slim
+sandbox_memory: 2g
+sandbox_timeout_seconds: 60
+
+sandbox_project_dir: ~/genesis_project
+sandbox_project_size: 32g
+
+scenario_injection_cycles: [5, 10]
+
+framing: disclosed
+identity_seed: prescribed
+watchdog_enabled: true
+
+# The only difference from the control arm.
+devils_advocate: true

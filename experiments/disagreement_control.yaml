@@ -1,0 +1,38 @@
+# Control arm for the devil's-advocate comparison.
+#
+# The question: does a structural change make the agents actually disagree?
+# Lifetime baseline across every run ever collected is 93 doctrine proposals,
+# 93 approvals, 0 rejections — across three prompt variants and two model sizes.
+#
+# This arm is the current system, unchanged, on the current code. The
+# devil's-advocate arm (disagreement_da.yaml) differs in exactly one thing: an
+# extra phase. Everything else here is held fixed so the comparison means
+# something — same task, same execution settings, same scenario schedule, same
+# cycle count.
+#
+# n=1 per arm is defensible for this specific question and would not be for most.
+# The baseline is a PERFECT record: 93/93. Distinguishing "0 rejections" from
+# "several rejections" is not a question about sampling noise. It would be if we
+# were comparing rates like 12% and 18%.
+#
+# Note there are no seeds — neither backend sends one — so these runs are not
+# reproducible. That is a known gap, recorded rather than pretended away.
+
+task: code
+execution_enabled: true
+sandbox_backend: docker
+sandbox_image: python:3.11-slim
+sandbox_memory: 2g
+sandbox_timeout_seconds: 60
+
+sandbox_project_dir: ~/genesis_project
+sandbox_project_size: 32g
+
+# Pressure applied identically in both arms. Scenarios are themselves a
+# candidate mitigation for trivial agreement, so holding them equal keeps the
+# DA contrast clean even though it cannot isolate the scenarios' own effect.
+scenario_injection_cycles: [5, 10]
+
+framing: disclosed
+identity_seed: prescribed
+watchdog_enabled: true
