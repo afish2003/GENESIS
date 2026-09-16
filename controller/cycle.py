@@ -74,6 +74,13 @@ class CycleState:
     #: Set by the execution phase; read by the task's evaluation prompt. None
     #: means the code was not run, which the evaluator is told explicitly.
     execution_result: Optional[dict] = None
+    #: LAST cycle's execution result, carried forward by the orchestrator so the
+    #: design phase can show the agents what their previous program actually
+    #: did. Without it a failure is something they never learn about: the
+    #: traceback goes to the evaluator, who marks them down, and the agents
+    #: write the next module having never seen it. None on the first cycle and
+    #: after a resume, since it is held in memory rather than persisted.
+    previous_execution: Optional[dict] = None
     events: list[EventEnvelope] = field(default_factory=list)
 
 
@@ -106,6 +113,8 @@ class CycleOrchestrator:
         # Everything logged during the current cycle, so the watchdog can
         # observe the cycle exactly as the logs record it.
         self._cycle_events: list[EventEnvelope] = []
+        #: Carried between cycles so agents can see what their last program did.
+        self._last_execution: Optional[dict] = None
 
     async def run_all_cycles(self, start_cycle: int = 0) -> None:
         """Execute all cycles from start_cycle to total_cycles."""
@@ -197,6 +206,7 @@ class CycleOrchestrator:
             scenario_library=self.scenario_library,
             kb_manager=self.kb_manager,
             sandbox=self.sandbox,
+            previous_execution=self._last_execution,
         )
 
         # Walk the sequence. Order is data — see controller/phases/sequence.py.
@@ -221,6 +231,8 @@ class CycleOrchestrator:
 
             if phase.builds_ctx:
                 contexts = self._build_contexts()
+
+        self._last_execution = cycle.execution_result
 
         self._log_event(EventType.CYCLE_END, cycle_id, payload={
             "failed_phases": list(cycle.failed_phases),

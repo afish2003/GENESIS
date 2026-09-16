@@ -760,3 +760,61 @@ class TestScenarioActuallyFires:
         not broken. The distinction the old code could not make."""
         config, _ = self._run(tmp_path, [])
         assert (config.run_log_dir / "scenario_events.jsonl").read_text().strip() == ""
+
+
+class TestTheBuildLoopClosesAcrossCycles:
+    """Cycle N's output must reach cycle N+1's design prompt.
+
+    Asserted through the real orchestrator, because the carry happens there:
+    `_last_execution` is set at CYCLE_END and handed to the next CycleState.
+    A unit test on the prompt builder cannot catch the orchestrator forgetting.
+    """
+
+    def test_cycle_one_sees_what_cycle_zero_ran(self, tmp_path):
+        from controller.sandbox.schemas import ExecutionOutcome, ExecutionResult
+
+        marker = "MARKER_FROM_CYCLE_ZERO"
+
+        class Sandbox:
+            async def run(self, request):
+                return ExecutionResult(
+                    outcome=ExecutionOutcome.OK, exit_code=0,
+                    stdout=f"{marker}\n", duration_seconds=0.1,
+                )
+
+            async def health_check(self):
+                return True
+
+            async def check_capacity(self):
+                return []
+
+            async def close(self):
+                return None
+
+        config = make_config(tmp_path, total_cycles=2, task="code",
+                             execution_enabled=True, sandbox_backend="docker")
+        prepared = prepare_run(config, load_embeddings=False)
+        prepared.backend.field_hints.update({"content": "print('hi')\n"})
+
+        seen: list[str] = []
+        original = prepared.backend.complete_structured
+
+        async def recording(*a, **kw):
+            for m in (a[0] if a else kw["messages"]):
+                seen.append(m.content)
+            return await original(*a, **kw)
+
+        prepared.backend.complete_structured = recording  # type: ignore[method-assign]
+        orch = CycleOrchestrator(
+            config=prepared.config, backend=prepared.backend, world=prepared.world,
+            log=prepared.log, scenario_library=prepared.scenario_library,
+            kb_manager=prepared.kb_manager, sandbox=Sandbox(),
+        )
+        asyncio.run(orch.run_all_cycles(start_cycle=0))
+
+        design_prompts = [t for t in seen if "What your last program did" in t]
+        assert design_prompts, (
+            "cycle 1's design prompt never showed the previous run — the build "
+            "loop is open and the agents cannot see their own failures"
+        )
+        assert any(marker in t for t in design_prompts)

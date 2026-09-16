@@ -336,3 +336,79 @@ class TestConfigDefaults:
         runtime."""
         c = RunConfig(run_id="X", condition="BASELINE", execution_enabled=True)
         assert c.sandbox_backend.value == "null"
+
+
+class TestTheBuildLoopIsClosed:
+    """Agents must see what their last program did.
+
+    Without it the feedback loop is open: the traceback goes to the evaluator,
+    who marks the cycle down, and the agents write the next module having never
+    seen the error. `/project` was empty after 24 cycles of SHAKE_002 partly for
+    this reason — nothing connected one cycle's build to the next.
+    """
+
+    class W:
+        protocols: dict = {}
+
+    def _prompt(self, tmp_path, previous=None, project=True):
+        from controller.tasks import CodeTask
+
+        kw = {}
+        if project:
+            proj = tmp_path / "project"
+            proj.mkdir(exist_ok=True)
+            (proj / "app.py").write_text("VERSION = 1")
+            kw["sandbox_project_dir"] = proj
+        config = cfg(**kw)
+        cycle = state()
+        cycle.previous_execution = previous
+        return CodeTask().design_prompt(config, self.W(), cycle)
+
+    def test_a_clean_previous_run_is_shown(self, tmp_path):
+        prompt = self._prompt(tmp_path, {
+            "outcome": "OK", "exit_code": 0, "duration_seconds": 0.4,
+            "stdout": "MARKER_LAST_CYCLE_OUTPUT", "stderr": "",
+        })
+        assert "What your last program did" in prompt
+        assert "MARKER_LAST_CYCLE_OUTPUT" in prompt
+        assert "Build on it" in prompt
+
+    def test_a_failure_is_shown_as_something_to_fix(self, tmp_path):
+        prompt = self._prompt(tmp_path, {
+            "outcome": "NONZERO_EXIT", "exit_code": 1, "duration_seconds": 0.2,
+            "stdout": "", "stderr": "MARKER_ZeroDivisionError",
+        })
+        assert "MARKER_ZeroDivisionError" in prompt
+        assert "Fixing this is a legitimate" in prompt
+
+    def test_the_first_cycle_has_no_previous_run_section(self, tmp_path):
+        assert "What your last program did" not in self._prompt(tmp_path, None)
+
+    def test_huge_previous_output_is_clipped(self, tmp_path):
+        prompt = self._prompt(tmp_path, {
+            "outcome": "OK", "exit_code": 0, "duration_seconds": 0.1,
+            "stdout": "x" * 40_000, "stderr": "",
+        })
+        assert len(prompt) < 20_000 and "[clipped]" in prompt
+
+    def test_the_prompt_asks_them_to_extend_not_restart(self, tmp_path):
+        """The reason /project stayed empty: the prompt asked for 'a module',
+        so they wrote a module."""
+        prompt = self._prompt(tmp_path)
+        assert "move the project forward" in prompt
+        assert "app.py" in prompt
+
+    def test_no_project_means_no_project_section(self, tmp_path):
+        prompt = self._prompt(tmp_path, project=False)
+        assert "/project" not in prompt
+
+
+class TestPreviousExecutionIsCarried:
+    """The orchestrator carries one cycle's result into the next."""
+
+    def test_cycle_state_defaults_to_none(self):
+        assert CycleState(cycle_id=0).previous_execution is None
+
+    def test_it_is_settable(self):
+        c = CycleState(cycle_id=1, previous_execution={"outcome": "OK"})
+        assert c.previous_execution["outcome"] == "OK"

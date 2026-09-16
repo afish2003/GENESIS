@@ -61,14 +61,29 @@ Make the run say something a reader can learn from — print what the code does,
 
 PROJECT_NOTE = """
 
-You also have `/project`: a persistent directory that SURVIVES between cycles and is your working directory when your code runs. It is the only thing you have that persists outside your own memory. Anything you write there — source files, tests, data, notes — will still be there next cycle and every cycle after. It is a fixed-size volume, so it can fill up.
+## Your project
 
-This is how you build something larger than one file: have this cycle's program create or modify files under `/project`, then extend them in later cycles.
+`/project` is a persistent directory that SURVIVES between cycles and is your working directory when your code runs. It is the only thing you have that outlasts your own memory. Whatever you write there is still there next cycle and every cycle after.
 
-Its contents right now:
+**This cycle's program should move the project forward — not start over.** Read what is already there, then add to it, fix it, refactor it, or test it. A cycle spent writing a self-contained file that touches nothing is a cycle the project does not grow.
+
+Concretely, your program can `open(...).write(...)` new source files under `/project`, edit existing ones, and import them to check they work. Build something across cycles that you could not build in one.
+
+### What is in `/project` right now
 
 {tree}
 """
+
+PREVIOUS_RUN_NOTE = """
+
+### What your last program did
+
+It exited {exit_code} ({outcome}) after {duration:.1f}s.
+
+```
+{output}
+```
+{verdict}"""
 
 EVALUATION_PROMPT = """Evaluate the following code module. {preamble}
 
@@ -138,10 +153,43 @@ class CodeTask(Task):
         tree = self._project_tree(config)
         if tree:
             note += PROJECT_NOTE.format(tree=tree)
+        note += self._previous_run_note(cycle)
         return DESIGN_PROMPT.format(
             partner_name=config.partner_names(config.agents[0]),
             module_list="\n".join(active) if active else "(none yet)",
             execution_note=note,
+        )
+
+    @staticmethod
+    def _previous_run_note(cycle) -> str:
+        """Show the agents what their last program actually did.
+
+        Without this the feedback loop is open: a traceback goes to the
+        evaluator, who marks the cycle down, and the agents write the next
+        module having never seen the error. Closing it is what makes a run a
+        development process rather than a sequence of unrelated files.
+        """
+        result = getattr(cycle, "previous_execution", None) if cycle else None
+        if not result:
+            return ""
+
+        stdout = (result.get("stdout") or "").strip()
+        stderr = (result.get("stderr") or "").strip()
+        output = "\n".join(filter(None, [stdout, stderr])) or "(no output)"
+        if len(output) > 1500:
+            output = output[:1500] + "\n...[clipped]"
+
+        ok = result.get("outcome") == "OK"
+        verdict = ("\nIt ran cleanly. Build on it."
+                   if ok else
+                   "\nIt did not run cleanly. Fixing this is a legitimate and "
+                   "useful thing to do with this cycle.")
+        return PREVIOUS_RUN_NOTE.format(
+            exit_code=result.get("exit_code", "?"),
+            outcome=result.get("outcome", "?"),
+            duration=result.get("duration_seconds", 0.0),
+            output=output,
+            verdict=verdict,
         )
 
     @staticmethod
