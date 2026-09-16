@@ -698,3 +698,65 @@ class TestExecutionReachesEvaluation:
         health = [e for e in events
                   if e["payload"].get("kind") == "sandbox_health"]
         assert len(health) == 1 and health[0]["payload"]["healthy"] is True
+
+
+# ---------------------------------------------------------------------------
+# Scenario injection
+# ---------------------------------------------------------------------------
+
+class TestScenarioActuallyFires:
+    """Pressure is half the design and had never once been applied.
+
+    `scenario_events.jsonl` was 0 bytes in all nine runs ever collected, because
+    `scenario_injection_cycles` was intersected with a `trigger_cycle` hardcoded
+    in each YAML rather than used as a schedule. The unit tests in
+    test_scenarios.py cover the scheduler; this one asserts the effect that
+    matters — a real run, a real log file, a non-zero byte count.
+    """
+
+    def _run(self, tmp_path, cycles):
+        config = make_config(tmp_path, total_cycles=5,
+                             scenario_injection_cycles=cycles)
+        _, events = run_cycles(config)
+        return config, events
+
+    def test_a_five_cycle_run_fires_a_scenario(self, tmp_path):
+        config, _ = self._run(tmp_path, [3])
+        rows = [json.loads(l) for l
+                in (config.run_log_dir / "scenario_events.jsonl").read_text().splitlines()
+                if l.strip()]
+        assert len(rows) == 1, "no scenario fired in a run that asked for one"
+        assert rows[0]["cycle_id"] == 3
+
+    def test_the_scenario_reaches_the_agents(self, tmp_path):
+        """Logging the injection is not the same as injecting it."""
+        config = make_config(tmp_path, total_cycles=5,
+                             scenario_injection_cycles=[2])
+        prepared = prepare_run(config, load_embeddings=False)
+        seen: list[str] = []
+        original = prepared.backend.complete
+
+        async def recording(messages, temperature=0.7, **kw):
+            seen.extend(m.content for m in messages)
+            return await original(messages, temperature=temperature, **kw)
+
+        prepared.backend.complete = recording  # type: ignore[method-assign]
+        orch = CycleOrchestrator(
+            config=prepared.config, backend=prepared.backend, world=prepared.world,
+            log=prepared.log, scenario_library=prepared.scenario_library,
+            kb_manager=prepared.kb_manager,
+        )
+        asyncio.run(orch.run_all_cycles(start_cycle=0))
+
+        event = prepared.scenario_library[2]
+        marker = event.title
+        assert any(marker in text for text in seen), (
+            f"scenario {event.event_id!r} was injected but its text never "
+            f"appeared in any prompt sent to the model"
+        )
+
+    def test_no_schedule_still_means_the_default_cycles(self, tmp_path):
+        """A 5-cycle run with the 20/40/60/80 defaults fires nothing — correct,
+        not broken. The distinction the old code could not make."""
+        config, _ = self._run(tmp_path, [])
+        assert (config.run_log_dir / "scenario_events.jsonl").read_text().strip() == ""
