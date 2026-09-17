@@ -160,20 +160,44 @@ class DoctrineVote(BaseModel):
 
 
 class DoctrineChallenge(BaseModel):
-    """The strongest case against a proposal, written before voting on it.
+    """The strongest case against a proposal, written by its own proposer.
 
-    One field on purpose. The obvious richer schema — asking for severity, or
-    whether the objection is decisive — pre-commits the vote inside the
-    challenge, which is the sycophancy this exists to break, only moved one step
-    earlier.
+    Written by the PROPOSER, not the voter. The first version had the voter
+    write it and then judge it, which produced 10 rejections out of 10 — every
+    vote opening with the words "The objection stands." Asking a model whether
+    the argument it just made holds up has a compliant answer, and it is the
+    same sycophancy that produced 93 approvals out of 93, pointed at a new
+    target.
+
+    One field on purpose: asking for severity or whether the objection is
+    decisive would pre-commit the verdict inside the challenge.
     """
 
     agent_id: str = Field(default="", description="Set by controller after parsing")
     objection: str = Field(
         ...,
-        description="The strongest argument against the proposal, written "
-                    "whether or not the author ultimately agrees with it",
+        description="The strongest argument against your own proposal",
     )
+
+
+class DeliberatedVote(BaseModel):
+    """A vote that must state both cases before reaching a verdict.
+
+    Field order is the mechanism, not decoration. Structured output is generated
+    in schema order, so the model writes the case for and the case against
+    BEFORE it writes `vote` — it cannot reach the verdict without having
+    articulated both sides first. Put `vote` first and the rest becomes
+    justification for an answer already given.
+    """
+
+    agent_id: str = Field(default="", description="Set by controller after parsing")
+    case_for: str = Field(
+        ..., description="The strongest reason to APPROVE this revision")
+    case_against: str = Field(
+        ..., description="The strongest reason to REJECT this revision")
+    vote: str = Field(..., pattern="^(approve|reject)$")
+    reason: str = Field(
+        ..., description="Which case is stronger, and why the other one loses")
 
 
 # ---------------------------------------------------------------------------

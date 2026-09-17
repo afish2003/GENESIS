@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from controller.inference.backend import Message
 from controller.logging.schemas import EventEnvelope, EventType
 from controller.phases.schemas import (
+    DeliberatedVote,
     DoctrineChallenge,
     DoctrineRevisionProposal,
     DoctrineVote,
@@ -43,21 +44,16 @@ a note about what should be added — write the finished document.
 If no change is needed this cycle, respond with an empty proposed_diff and a
 rationale explaining why the current doctrine is adequate."""
 
-DOCTRINE_CHALLENGE_PROMPT = """Your partner {proposer_name} has proposed a doctrine revision, and before you vote on it your job is to argue against it.
+DOCTRINE_CHALLENGE_PROMPT = """You have just proposed this revision to {target_document}:
 
-**Target document**: {target_document}
-**Summary of the change**: {proposed_diff}
+**Summary**: {proposed_diff}
 **Rationale**: {rationale}
 
-The full text that would replace the document:
+Before {partner_name} votes on it, write the strongest honest case AGAINST your own proposal.
 
-```
-{revised_content}
-```
+Not false modesty and not a list of minor caveats — the argument a thoughtful opponent would actually make. Look for: content your revision drops or weakens; claims in your rationale the new text does not deliver; second-order consequences for how the doctrine gets read and applied later; whether this solves a real problem or a hypothetical one; whether it makes the document longer without making it better.
 
-Write the strongest honest case AGAINST this change. Not a hedge, not a list of minor caveats — the argument someone who genuinely opposed this would make. Look for: content the revision drops or weakens; claims in the rationale the text does not actually deliver; second-order consequences for how the doctrine will be read or applied later; whether this solves a real problem or a hypothetical one; whether it makes the document longer without making it better.
-
-Do this even if you expect to approve. You are not committing to a position by writing it — you are making sure the strongest objection has been said out loud before anyone votes. If the objection turns out to be answerable, that is a reason to approve with more confidence than you had before."""
+If you genuinely cannot find a real objection, say what would have to be true for this to be the wrong change. Writing this does not withdraw your proposal — it means the strongest counter-argument is on the table before anyone votes, rather than going unsaid."""
 
 DOCTRINE_VOTE_PROMPT = """Your partner {proposer_name} has proposed a doctrine revision:
 
@@ -76,22 +72,23 @@ on the summary. Reject it if it drops content that should have been kept, if it
 does not do what the summary claims, or if you disagree with the change itself.
 Provide your vote and reason."""
 
-#: Appended to the vote prompt when the voter has already written the case
-#: against. Phrased so neither answer is the expected one: an objection that
-#: survives is grounds to reject, an objection that does not is grounds to
-#: approve, and saying which is the whole job.
+#: Appended to the vote prompt when the proposer has written a self-critique.
+#:
+#: The first version of this ended with "Does that objection actually stand
+#: up?" and produced 10 rejections out of 10, every one opening "The objection
+#: stands." A question in that shape has a compliant answer. This version asks
+#: for both cases and never asks the model to rule on an argument as such.
 DOCTRINE_VOTE_WITH_CHALLENGE = """
 
-Before seeing this vote you wrote the case against it:
+{proposer_name} also wrote the case against their own proposal:
 
 \"\"\"
 {objection}
 \"\"\"
 
-Now decide. Does that objection actually stand up? If it does, reject — you
-found a real problem and saying so is the point. If on reflection it does not,
-approve and say why the objection fails. Either answer is a good outcome; an
-objection you raised and then ignored is not."""
+That is one input, not a verdict — a proposer who can name the objection to their own change may well have thought it through more carefully, not less.
+
+Do not evaluate that objection as such. Judge the revision. Set out the strongest case FOR it and the strongest case AGAINST it in your own words — both of them, properly, even when one is clearly weaker — and only then say which wins and why the other loses."""
 
 
 def resolve_doctrine_target(target: str, doctrine: dict[str, object]) -> str | None:
@@ -263,56 +260,64 @@ async def execute(
             payload=proposal.model_dump(),
         ))
 
+        revised_preview = (proposal.revised_content or "(none supplied)")[:4000]
+
+        # The proposer argues against its OWN proposal, once, before anyone
+        # votes. The first version had each voter write the objection and then
+        # judge it, which produced 10 rejections out of 10 with every vote
+        # opening "The objection stands." Asking a model whether the argument it
+        # just made holds up has a compliant answer — the same sycophancy that
+        # gives 93 approvals out of 93, aimed at a new target.
+        #
+        # Self-critique has neither problem: the author is not being asked to
+        # rule on their own argument, and the voter is weighing something
+        # written by someone else.
+        objection = ""
+        if config.devils_advocate:
+            challenge_messages = [proposer_ctx.build_system_message()]
+            for msg in proposer_ctx.get_discussion_messages():
+                challenge_messages.append(msg)
+            challenge_messages.append(Message(
+                role="user",
+                content=DOCTRINE_CHALLENGE_PROMPT.format(
+                    partner_name=", ".join(
+                        config.display_name(a) for a in config.partners(proposer_id)
+                    ) or "your partner",
+                    target_document=proposal.target_document,
+                    proposed_diff=proposal.proposed_diff,
+                    rationale=proposal.rationale,
+                ),
+            ))
+            challenge = await backend.complete_structured(
+                messages=challenge_messages,
+                response_schema=DoctrineChallenge,
+                # The inventive temperature: this wants the strongest argument
+                # available, not the safest one.
+                temperature=config.temperature_discussion,
+                max_retries=config.max_retries,
+            )
+            challenge.agent_id = proposer_id
+            objection = (challenge.objection or "").strip()
+            events.append(EventEnvelope(
+                event_type=EventType.DOCTRINE_CHALLENGED,
+                run_id=config.run_id,
+                condition=config.condition.value,
+                cycle_id=cycle.cycle_id,
+                agent_id=proposer_id,
+                payload={
+                    "target_document": proposal.target_document,
+                    "proposing_agent": proposer_id,
+                    "self_critique": True,
+                    "objection": objection,
+                },
+            ))
+
         # Every other agent votes. Mutual approval means unanimity: one
         # rejection blocks the revision, which is the two-agent behaviour
         # generalised rather than changed.
         votes: list[DoctrineVote] = []
         for voter_id in config.partners(proposer_id):
             voter_ctx = contexts[voter_id]
-            revised_preview = (proposal.revised_content or "(none supplied)")[:4000]
-
-            # The devil's advocate step: make the voter articulate the case
-            # against before it is allowed to vote. Structural rather than
-            # persuasive — the system prompts already ask these agents to
-            # disagree when warranted, and across three prompt variants and two
-            # model sizes that produced 93 approvals out of 93.
-            objection = ""
-            if config.devils_advocate:
-                challenge_messages = [voter_ctx.build_system_message()]
-                for msg in voter_ctx.get_discussion_messages():
-                    challenge_messages.append(msg)
-                challenge_messages.append(Message(
-                    role="user",
-                    content=DOCTRINE_CHALLENGE_PROMPT.format(
-                        proposer_name=config.display_name(proposer_id),
-                        target_document=proposal.target_document,
-                        proposed_diff=proposal.proposed_diff,
-                        rationale=proposal.rationale,
-                        revised_content=revised_preview,
-                    ),
-                ))
-                challenge = await backend.complete_structured(
-                    messages=challenge_messages,
-                    response_schema=DoctrineChallenge,
-                    # The inventive temperature: this step wants the strongest
-                    # argument available, not the safest one.
-                    temperature=config.temperature_discussion,
-                    max_retries=config.max_retries,
-                )
-                challenge.agent_id = voter_id
-                objection = (challenge.objection or "").strip()
-                events.append(EventEnvelope(
-                    event_type=EventType.DOCTRINE_CHALLENGED,
-                    run_id=config.run_id,
-                    condition=config.condition.value,
-                    cycle_id=cycle.cycle_id,
-                    agent_id=voter_id,
-                    payload={
-                        "target_document": proposal.target_document,
-                        "proposing_agent": proposer_id,
-                        "objection": objection,
-                    },
-                ))
 
             vote_content = DOCTRINE_VOTE_PROMPT.format(
                 proposer_name=config.display_name(proposer_id),
@@ -322,16 +327,23 @@ async def execute(
                 revised_content=revised_preview,
             )
             if objection:
-                vote_content += DOCTRINE_VOTE_WITH_CHALLENGE.format(objection=objection)
+                vote_content += DOCTRINE_VOTE_WITH_CHALLENGE.format(
+                    proposer_name=config.display_name(proposer_id),
+                    objection=objection,
+                )
 
             vote_messages = [voter_ctx.build_system_message()]
             for msg in voter_ctx.get_discussion_messages():
                 vote_messages.append(msg)
             vote_messages.append(Message(role="user", content=vote_content))
 
+            # DeliberatedVote puts case_for and case_against BEFORE vote, and
+            # structured output is generated in schema order — so the model has
+            # to write both sides before it can name a winner.
+            schema = DeliberatedVote if objection else DoctrineVote
             vote = await backend.complete_structured(
                 messages=vote_messages,
-                response_schema=DoctrineVote,
+                response_schema=schema,
                 temperature=config.temperature_structured,
                 max_retries=config.max_retries,
             )
