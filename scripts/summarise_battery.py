@@ -86,6 +86,17 @@ def analyse(run_dir: Path) -> dict | None:
              if e["event_type"] == "EVALUATION_SCORE"]
     scores = [e["total_score"] for e in evals if e.get("total_score") is not None]
 
+    # A pairwise run has no total_score by design: the metric is a delta
+    # against the version each artifact replaced, and the level is its
+    # running sum. Reported separately rather than squeezed into the same
+    # column, because the two are different scales.
+    nets = [e["improvement_net"] for e in evals
+            if e.get("comparison") == "pairwise"
+            and e.get("improvement_net") is not None]
+    quality_index = next(
+        (e["quality_index"] for e in reversed(evals)
+         if e.get("quality_index") is not None), None)
+
     notable = read_jsonl(run_dir / "notable_events.jsonl")
     identity_revs = [e for e in notable if e["event_type"] == "IDENTITY_REVISED"]
     resets = [e for e in notable
@@ -117,7 +128,10 @@ def analyse(run_dir: Path) -> dict | None:
         "doctrine_chars_first": doctrine_first,
         "doctrine_chars_last": doctrine_last,
         "doctrine_chars_per_revision": doctrine_per_rev,
-        "evaluations": len(scores),
+        "evaluations": len(scores) or len(nets),
+        "quality_index": quality_index if nets else None,
+        "improvement_mean": (statistics.fmean(nets) if nets else None),
+        "cycles_improved": (sum(1 for n in nets if n > 0) if nets else None),
         # Spread of the judge's own output. Near-zero means the score cannot
         # register an experimental effect, whatever the effect is.
         "score_sd": (statistics.pstdev(scores) if len(scores) > 1 else None),
@@ -140,6 +154,9 @@ MEASURES = [
     ("coordination_strength", "coordination strength (M4)", "{:.3f}"),
     ("doctrine_chars_last", "doctrine size, final (chars)", "{:.0f}"),
     ("doctrine_chars_per_revision", "doctrine growth per revision", "{:.0f}"),
+    ("quality_index", "quality index (pairwise)", "{:+.0f}"),
+    ("improvement_mean", "net improvement per cycle", "{:+.2f}"),
+    ("cycles_improved", "cycles that improved", "{:.0f}"),
     ("score_mean", "total_score, mean", "{:.2f}"),
     ("score_sd", "total_score, SD within run", "{:.2f}"),
     ("score_first", "total_score, first cycle", "{:.2f}"),

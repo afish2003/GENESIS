@@ -95,6 +95,12 @@ class CycleState:
     #: write the next module having never seen it. None on the first cycle and
     #: after a resume, since it is held in memory rather than persisted.
     previous_execution: Optional[dict] = None
+
+    #: Running total of pairwise improvement, carried from the previous
+    #: cycle. Pairwise scoring yields a per-cycle DELTA; the level has to be
+    #: accumulated by someone, and the orchestrator is the only thing that
+    #: sees consecutive cycles.
+    previous_quality_index: int = 0
     events: list[EventEnvelope] = field(default_factory=list)
 
     def evaluation_feedback(self, max_chars: int = 900) -> str:
@@ -164,6 +170,7 @@ class CycleOrchestrator:
         self._cycle_events: list[EventEnvelope] = []
         #: Carried between cycles so agents can see what their last program did.
         self._last_execution: Optional[dict] = None
+        self._quality_index: int = 0
         #: Where generation deltas go while a phase runs. Deliberately NOT in
         #: EVENT_FILE_ROUTING: this is a view artifact, not research data. It is
         #: truncated every cycle, safe to delete at any time, and nothing in the
@@ -366,6 +373,7 @@ class CycleOrchestrator:
             sandbox=self.sandbox,
             evaluator_backend=self.evaluator_backend,
             previous_execution=self._last_execution,
+            previous_quality_index=self._quality_index,
         )
 
         # Walk the sequence. Order is data — see controller/phases/sequence.py.
@@ -392,6 +400,12 @@ class CycleOrchestrator:
                 contexts = self._build_contexts()
 
         self._last_execution = cycle.execution_result
+        # Carry the pairwise level forward. Absent on an absolute-scoring run
+        # and on a cycle with nothing to compare against, in which case it
+        # must stay where it was rather than reset to zero.
+        index = (cycle.evaluation_result or {}).get("quality_index")
+        if index is not None:
+            self._quality_index = int(index)
 
         self._log_event(EventType.CYCLE_END, cycle_id, payload={
             "failed_phases": list(cycle.failed_phases),

@@ -241,21 +241,21 @@ class TestTheVariantReachesTheLiveEvaluationPhase:
         assert RunConfig(run_id="T", condition="BASELINE").judge_variant == "current"
 
 
-class TestPairwiseIsBenchableButNotShippable:
-    """pairwise returns a choice per dimension, not a number. The evaluation
-    phase writes `scores` and `total_score`, and every downstream analysis
-    reads them, so accepting it in config would produce a run whose primary
-    metric is missing. Kept out of SCORING_VARIANTS until there is a decision
-    about what the per-cycle metric becomes."""
+class TestPairwiseShipsWithItsOwnMetric:
+    """Pairwise writes improvement/quality_index, never scores/total_score.
 
-    def test_config_refuses_it(self):
-        from pydantic import ValidationError
-        with pytest.raises(ValidationError):
-            RunConfig(run_id="T", condition="BASELINE", judge_variant="pairwise")
+    Eleven files read total_score and treat it as an absolute [0, 50] level.
+    A pairwise comparison produces a [-5, +5] delta. Putting the delta in that
+    field would corrupt every existing comparison without raising once, so the
+    two never share a name.
+    """
 
-    def test_the_bench_can_still_run_it(self):
-        assert "pairwise" in VARIANTS
-        assert "pairwise" not in SCORING_VARIANTS
+    def test_config_accepts_it(self):
+        assert RunConfig(run_id="T", condition="BASELINE",
+                         judge_variant="pairwise").judge_variant == "pairwise"
+
+    def test_it_is_not_a_scoring_variant(self):
+        assert "pairwise" in VARIANTS and "pairwise" not in SCORING_VARIANTS
 
     def test_its_schema_reasons_before_it_chooses(self):
         from controller.judge import pairwise_schema
@@ -275,3 +275,40 @@ class TestPairwiseIsBenchableButNotShippable:
         p = build_pairwise_prompt(t, "FIRST-DOC", "SECOND-DOC")
         assert "FIRST-DOC" in p and "SECOND-DOC" in p
         assert "Position carries no information" in load_judge_system_prompt("pairwise")
+
+
+class TestImprovementRespectsTheRandomisedSlot:
+    """The new artifact's slot is randomised to cancel position bias, so the
+    mapping must be told which slot it was. A judge that always answers "A"
+    would otherwise read as steady improvement for a whole run."""
+
+    from controller.judge import improvement_from_choices as _f
+
+    def test_new_in_a_wins_when_a_is_chosen(self):
+        from controller.judge import improvement_from_choices
+        assert improvement_from_choices({"d": "A"}, new_is="A") == {"d": 1}
+
+    def test_new_in_b_loses_when_a_is_chosen(self):
+        from controller.judge import improvement_from_choices
+        assert improvement_from_choices({"d": "A"}, new_is="B") == {"d": -1}
+
+    def test_a_tie_is_zero_in_either_slot(self):
+        from controller.judge import improvement_from_choices
+        for slot in ("A", "B"):
+            assert improvement_from_choices({"d": "tie"}, new_is=slot) == {"d": 0}
+
+    def test_a_constant_answer_nets_zero_across_balanced_slots(self):
+        """The property the randomisation exists for: a judge that always
+        says "A" must average to no improvement, not to improvement."""
+        from controller.judge import improvement_from_choices
+        dims = ["a", "b", "c", "d", "e"]
+        always_a = {d: "A" for d in dims}
+        in_a = sum(improvement_from_choices(always_a, "A").values())
+        in_b = sum(improvement_from_choices(always_a, "B").values())
+        assert in_a + in_b == 0
+
+    def test_net_is_bounded_by_the_dimension_count(self):
+        from controller.judge import improvement_from_choices
+        t = create_task(RunConfig(run_id="T", condition="BASELINE"))
+        best = {d: "A" for d in t.dimensions}
+        assert sum(improvement_from_choices(best, "A").values()) == len(t.dimensions)

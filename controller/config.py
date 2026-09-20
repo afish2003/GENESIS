@@ -319,7 +319,7 @@ class RunConfig(BaseModel):
 
     judge_variant: str = Field(
         default="current",
-        pattern="^(current|evidence_first|anchored)$",
+        pattern="^(current|evidence_first|anchored|pairwise)$",
         description="How the evaluator is asked for a score. `current` is the "
                     "2026-09-20 configuration, in which three of five "
                     "dimensions were constants across 71 evaluations and the "
@@ -328,8 +328,11 @@ class RunConfig(BaseModel):
                     "quality. `evidence_first` writes the justification before "
                     "the score; `anchored` requires a named defect per "
                     "dimension and caps the score by it. See controller/judge.py "
-                    "and scripts/judge_bench.py — do not change this without "
-                    "benching it.",
+                    "`pairwise` compares each artifact to the one it "
+                    "replaced and writes improvement/quality_index instead of "
+                    "scores/total_score, which are a different scale. See "
+                    "controller/judge.py and scripts/judge_bench.py — do not "
+                    "change this without benching it.",
     )
 
     # The sandbox task — what the agents build each cycle. See controller/tasks/.

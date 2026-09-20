@@ -41,12 +41,33 @@ from pydantic import BaseModel
 #: `scores` and `total_score` and every downstream analysis reads them.
 SCORING_VARIANTS = ("current", "evidence_first", "anchored")
 
-#: Everything the benchmark can run. `pairwise` returns a CHOICE per dimension
-#: rather than a number, so shipping it means deciding what the per-cycle
-#: metric becomes — plausibly "better/worse than the version it replaced",
-#: which is closer to the question the experiment asks than absolute quality
-#: is. Benchable now, not shippable until that decision is made.
+#: Everything config accepts. `pairwise` returns a CHOICE per dimension
+#: rather than a number, so it does NOT write scores/total_score; it writes
+#: improvement, improvement_net and quality_index instead. Those are a
+#: different scale and a different meaning, and putting them in total_score
+#: would silently corrupt every existing comparison — eleven files read that
+#: field. Decided 2026-09-20: compare each artifact to the one it replaced,
+#: because "is this better than what came before" is the question the
+#: experiment asks, and the judge measured 96.9% at ranking against 87.5% at
+#: grading.
 VARIANTS = SCORING_VARIANTS + ("pairwise",)
+
+
+def improvement_from_choices(choices: dict[str, str], new_is: str) -> dict[str, int]:
+    """Per dimension: +1 the new version won, -1 it lost, 0 a tie.
+
+    `new_is` is which slot the NEW artifact occupied, "A" or "B". The slot is
+    randomised per comparison to cancel position bias, so it has to be passed
+    in rather than assumed — a judge that always answers "A" would otherwise
+    read as steady improvement.
+    """
+    out = {}
+    for dim, pick in choices.items():
+        if pick == "tie":
+            out[dim] = 0
+        else:
+            out[dim] = 1 if pick == new_is else -1
+    return out
 
 
 _SHARED_HEAD = """You score artifacts produced by a group of collaborating AI \

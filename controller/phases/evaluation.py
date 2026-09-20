@@ -10,7 +10,11 @@ from controller.inference.backend import Message
 from controller.logging.schemas import EventEnvelope, EventType
 from controller.judge import (
     anchored_violations,
+    build_pairwise_prompt,
     evaluation_schema_for,
+    improvement_from_choices,
+    load_judge_system_prompt,
+    pairwise_schema,
     reasoning_field,
     variant_instruction,
 )
@@ -63,6 +67,12 @@ async def execute(
     # against. Both come from the same place so the prompt cannot ask for one
     # shape while the parser expects another.
     variant = config.judge_variant
+
+    if variant == "pairwise":
+        return await _evaluate_pairwise(
+            config, backend, world, cycle, contexts, logger,
+            task, proposal, evaluator_prompt, events)
+
     prompt = task.evaluation_prompt(
         world, cycle, doctrine_context, instruction=variant_instruction(variant))
     if prompt is None:
@@ -195,5 +205,101 @@ async def execute(
             **output.model_dump(),
         },
     ))
+
+    return events
+
+
+async def _evaluate_pairwise(config, backend, world, cycle, contexts, logger,
+                             task, proposal, evaluator_prompt, events):
+    """Score this cycle's artifact against the one it replaced.
+
+    Chosen over absolute grading on 2026-09-20 after benchmarking: the same
+    judge ranks at 96.9% against known damage and grades at 87.5%, and three
+    of five dimensions were constants across 71 real evaluations. "Is this
+    better than what came before" is also nearer the question the experiment
+    asks than "what is this worth".
+
+    Writes improvement / improvement_net / quality_index, NOT scores and
+    total_score. Those are a different scale, eleven files read total_score,
+    and putting a [-5, +5] delta in a field everything treats as a [0, 50]
+    level would corrupt every comparison without erroring once.
+    """
+    import random
+
+    previous = (getattr(cycle, "previous_artifact_content", "") or "").strip()
+    current = (proposal.get("content") or "").strip()
+
+    if not previous:
+        # Cycle 0, or a genuinely new artifact. There is nothing to compare
+        # against and inventing a baseline would make the first cycle of every
+        # run an arbitrary number.
+        cycle.evaluation_result = {
+            "protocol_id": proposal["protocol_id"],
+            "comparison": "none",
+            "detail": "no prior version to compare against",
+            "quality_index": 0,
+        }
+        events.append(EventEnvelope(
+            event_type=EventType.EVALUATION_SCORE,
+            run_id=config.run_id,
+            condition=config.condition.value,
+            cycle_id=cycle.cycle_id,
+            payload=cycle.evaluation_result,
+        ))
+        return events
+
+    # Which slot the NEW artifact takes is randomised per comparison. A judge
+    # with a position preference would otherwise read as steady improvement or
+    # steady decline for a whole run. Recorded so the bias is measurable
+    # after the fact rather than assumed away.
+    new_is_a = random.random() < 0.5
+    a, b = (current, previous) if new_is_a else (previous, current)
+
+    judge = cycle.evaluator_backend or backend
+    output = await judge.complete_structured(
+        messages=[
+            Message(role="system", content=load_judge_system_prompt("pairwise")),
+            Message(role="user", content=build_pairwise_prompt(task, a, b)),
+        ],
+        response_schema=pairwise_schema(task),
+        temperature=config.temperature_structured,
+        max_retries=config.max_retries,
+        speaker="evaluator",
+    )
+
+    choices = output.choices.model_dump()
+    improvement = improvement_from_choices(choices, "A" if new_is_a else "B")
+    net = sum(improvement.values())
+    index = int(getattr(cycle, "previous_quality_index", 0) or 0) + net
+
+    cycle.evaluation_result = {
+        "protocol_id": proposal["protocol_id"],
+        "comparison": "pairwise",
+        "improvement": improvement,
+        "improvement_net": net,
+        "quality_index": index,
+        "new_version_slot": "A" if new_is_a else "B",
+        "choices": choices,
+        "justifications": output.justifications,
+        "assessment": output.assessment,
+    }
+    events.append(EventEnvelope(
+        event_type=EventType.EVALUATION_SCORE,
+        run_id=config.run_id,
+        condition=config.condition.value,
+        cycle_id=cycle.cycle_id,
+        payload=cycle.evaluation_result,
+    ))
+
+    better = [d for d, v in improvement.items() if v > 0]
+    worse = [d for d, v in improvement.items() if v < 0]
+    summary_line = (
+        f"This cycle's {task.artifact_noun} was judged against the previous "
+        f"version: net {net:+d} "
+        f"(better: {', '.join(better) or 'none'}; "
+        f"worse: {', '.join(worse) or 'none'})."
+    )
+    for ctx in contexts.values():
+        ctx.cycle_events.append(summary_line)
 
     return events

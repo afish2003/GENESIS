@@ -66,6 +66,13 @@ def analyze_run(run_dir: Path) -> dict:
             "cycle": e.get("cycle_id"),
             "total_score": payload.get("total_score"),
             "scores": payload.get("scores", {}),
+            # A pairwise run carries these instead of a score. Dropping them
+            # here left print_summary with an evaluation that looked empty,
+            # which reads exactly like an evaluation phase that did nothing.
+            "comparison": payload.get("comparison"),
+            "improvement": payload.get("improvement"),
+            "improvement_net": payload.get("improvement_net"),
+            "quality_index": payload.get("quality_index"),
         })
 
     # Doctrine dynamics
@@ -138,14 +145,34 @@ def print_summary(metrics: dict) -> None:
     print(f"  Total cycles:        {metrics['total_cycles']}")
     print(f"  Discussion turns:    {metrics['discussion_turns']}")
     print()
-    print("  Evaluation Scores:")
-    if metrics["evaluation_scores"]:
-        scores = [s["total_score"] for s in metrics["evaluation_scores"] if s["total_score"] is not None]
-        if scores:
-            print(f"    Mean:   {sum(scores) / len(scores):.1f}/50")
-            print(f"    Min:    {min(scores)}/50")
-            print(f"    Max:    {max(scores)}/50")
-            print(f"    Count:  {len(scores)}")
+    print("  Evaluation:")
+    evals = metrics["evaluation_scores"]
+    scores = [s["total_score"] for s in evals if s.get("total_score") is not None]
+    # A pairwise run has no total_score at all. Printing an empty "Evaluation
+    # Scores:" heading was how this looked, which is indistinguishable from an
+    # evaluation phase that silently did nothing — the failure mode this
+    # project keeps producing.
+    pairwise = [s for s in evals if s.get("comparison") == "pairwise"]
+    if scores:
+        print(f"    Mean:   {sum(scores) / len(scores):.1f}/50")
+        print(f"    Min:    {min(scores)}/50")
+        print(f"    Max:    {max(scores)}/50")
+        print(f"    Count:  {len(scores)}")
+    elif pairwise:
+        nets = [s["improvement_net"] for s in pairwise
+                if s.get("improvement_net") is not None]
+        index = pairwise[-1].get("quality_index")
+        better = sum(1 for n in nets if n > 0)
+        worse = sum(1 for n in nets if n < 0)
+        print(f"    Pairwise against the previous version (no absolute score)")
+        print(f"    Quality index: {index:+d} after {len(nets)} comparisons")
+        print(f"    Improved on {better}, regressed on {worse}, "
+              f"level on {len(nets) - better - worse}")
+        if nets:
+            print(f"    Mean net:      {sum(nets) / len(nets):+.2f} per cycle")
+    elif evals:
+        print("    (evaluations logged, but none carried a score — check the "
+              "judge_variant and the evaluation phase)")
     else:
         print("    (no evaluations)")
     print()
