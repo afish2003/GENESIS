@@ -73,3 +73,43 @@ class TestTheShippedEnvExampleDoesNotReintroduceIt:
         assert not live, (
             "a shipped WORLD_TEMPLATE_DIR pointing at the build output makes "
             f"every run ignore world_template_src: {live}")
+
+
+class TestEachRunGetsItsOwnWorld:
+    """A shared ./world is destroyed by the next run.
+
+    initialize_world does shutil.rmtree before copying the template, so run
+    N+1 deleted run N's final doctrine and identities. run_battery.py set
+    WORLD_DIR per run to avoid it; a plain `python -m controller.main` did
+    not, and silently lost the world it had just built.
+    """
+
+    def test_the_default_is_per_run(self):
+        from controller.config import RunConfig
+        a = RunConfig(run_id="RUN_A", condition="BASELINE").world_dir
+        b = RunConfig(run_id="RUN_B", condition="BASELINE").world_dir
+        assert a != b
+        assert "RUN_A" in str(a) and "RUN_B" in str(b)
+
+    def test_an_explicit_directory_still_wins(self):
+        """Sharing one on purpose stays possible — it just is not the default."""
+        from controller.config import RunConfig
+        cfg = RunConfig(run_id="R", condition="BASELINE", world_dir="./shared")
+        assert str(cfg.world_dir) == "shared"
+
+    def test_resume_resolves_to_the_same_place(self):
+        """Derived from run_id, so a resumed run finds the world it left."""
+        from controller.config import RunConfig
+        first = RunConfig(run_id="SAME", condition="BASELINE").world_dir
+        again = RunConfig(run_id="SAME", condition="BASELINE").world_dir
+        assert first == again
+
+    def test_neither_env_file_pins_a_shared_world(self):
+        from pathlib import Path
+        for name in (".env.example", ".env"):
+            p = Path(name)
+            if not p.exists():
+                continue
+            live = [ln for ln in p.read_text().splitlines()
+                    if ln.strip().startswith("WORLD_DIR=")]
+            assert not live, f"{name} pins a shared world dir: {live}"

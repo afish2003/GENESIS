@@ -373,7 +373,13 @@ class RunConfig(BaseModel):
     )
 
     # Paths
-    world_dir: Path = Field(default=Path("./world"))
+    #: None means "one per run", which is what it should almost always be.
+    #: A shared ./world is destroyed by the next run: initialize_world does
+    #: shutil.rmtree before copying the template, so run N+1 deletes run N's
+    #: final doctrine and identities. run_battery.py already worked around
+    #: this by setting WORLD_DIR per run; a plain `python -m controller.main`
+    #: did not, and lost the world it had just built.
+    world_dir: Optional[Path] = Field(default=None)
     # Sources carry conditional markup. The rendered output for a run lands in
     # that run's own log directory (see run_prompts_dir / run_world_template_dir),
     # which makes it version-locked by construction, keeps concurrent arms from
@@ -460,6 +466,13 @@ class RunConfig(BaseModel):
     def run_world_template_dir(self) -> Path:
         """Where this run's clean world template is read from."""
         return self.run_log_dir / "world_template"
+
+    @model_validator(mode="after")
+    def _default_world_dir_per_run(self) -> "RunConfig":
+        """Give each run its own world unless one was named explicitly."""
+        if self.world_dir is None:
+            object.__setattr__(self, "world_dir", Path("world_runs") / self.run_id)
+        return self
 
     @model_validator(mode="after")
     def _reject_conflicting_prompt_selection(self) -> "RunConfig":
