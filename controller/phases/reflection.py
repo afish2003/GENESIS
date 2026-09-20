@@ -54,6 +54,7 @@ async def execute(
             response_schema=ReflectionOutput,
             temperature=config.temperature_discussion,
             max_retries=config.max_retries,
+            speaker=agent_id,
         )
         # Ensure agent_id is set correctly
         output.agent_id = agent_id

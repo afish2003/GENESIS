@@ -93,7 +93,12 @@ class InferenceBackend(ABC):
     #: nothing about a normal run changes. Its only purpose is watchability:
     #: a phase otherwise appears as nine seconds of silence followed by a
     #: finished block, and you never see the agents think.
-    stream_sink: "Optional[Callable[[str], None]]" = None
+    #: Receives (delta, speaker). `speaker` is who the text is coming from —
+    #: an agent id, or "evaluator", or None where nobody is speaking as
+    #: anyone. Without it the live feed is a wall of text during a two-agent
+    #: discussion and you cannot tell which of them is talking, which is the
+    #: single thing you most want to know while watching them argue.
+    stream_sink: "Optional[Callable[[str, Optional[str]], None]]" = None
 
     @abstractmethod
     async def complete(
@@ -101,11 +106,19 @@ class InferenceBackend(ABC):
         messages: list[Message],
         temperature: float = 0.7,
         force_json: bool = False,
+        speaker: "Optional[str]" = None,
     ) -> InferenceResult:
         """Send a chat completion request and return the raw result.
 
         `force_json` asks the endpoint to constrain decoding to valid JSON where
         it supports that. Advisory: backends that cannot do it ignore it.
+
+        `speaker` is passed through to `stream_sink` and affects nothing else.
+        Threaded explicitly through every call site rather than carried in a
+        contextvar: an ambient "current speaker" is exactly the implicit
+        control flow this project rules out, and it would silently mislabel
+        the feed the first time a phase built one agent's messages and called
+        for another.
         """
         ...
 
@@ -135,6 +148,7 @@ class InferenceBackend(ABC):
         response_schema: Type[T],
         temperature: float = 0.3,
         max_retries: int = 2,
+        speaker: "Optional[str]" = None,
     ) -> T:
         """Send a chat completion request and parse the response into a Pydantic model.
 
@@ -164,6 +178,7 @@ class InferenceBackend(ABC):
                 # retry, constrain regardless — that is the measured fix for an
                 # unparseable response (1/6 -> 5/6 on qwen2.5:7b).
                 force_json=self.prefers_json_mode or attempt > 0,
+                speaker=speaker,
             )
 
             last_content = result.content

@@ -86,6 +86,10 @@ async def execute(
         response_schema=evaluation_schema_for(task, variant),
         temperature=config.temperature_structured,
         max_retries=config.max_retries,
+        # Not an agent. Labelled so the live feed distinguishes the judge's
+        # text from the agents' rather than attributing it to whoever spoke
+        # last, which is worse than leaving it blank.
+        speaker="evaluator",
     )
     output.protocol_id = proposal["protocol_id"]
 

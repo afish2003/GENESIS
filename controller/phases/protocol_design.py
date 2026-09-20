@@ -54,6 +54,7 @@ async def execute(
         response_schema=task.output_schema(),
         temperature=config.temperature_discussion,
         max_retries=config.max_retries,
+        speaker=lead_agent,
     )
     if hasattr(output, "proposing_agent"):
         output.proposing_agent = lead_agent

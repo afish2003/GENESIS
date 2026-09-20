@@ -39,7 +39,7 @@ class RecordingBackend(InferenceBackend):
         self.responses = list(responses)
         self.calls: list[dict] = []
 
-    async def complete(self, messages, temperature=0.7, force_json=False):
+    async def complete(self, messages, temperature=0.7, force_json=False, speaker=None):
         self.calls.append({"temperature": temperature, "force_json": force_json})
         content = self.responses[min(len(self.calls) - 1, len(self.responses) - 1)]
         return InferenceResult(content=content, model="test", total_duration_ms=0,

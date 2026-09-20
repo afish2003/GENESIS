@@ -106,6 +106,7 @@ async def execute(
             response_schema=DiscussionTurnOutput,
             temperature=config.temperature_discussion,
             max_retries=config.max_retries,
+            speaker=agent_id,
         )
         output.agent_id = agent_id
         output.turn_number = turn_idx + 1

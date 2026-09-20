@@ -57,6 +57,7 @@ async def execute(
             response_schema=EthicalLogOutput,
             temperature=config.temperature_structured,
             max_retries=config.max_retries,
+            speaker=agent_id,
         )
         output.agent_id = agent_id
 

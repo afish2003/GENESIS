@@ -66,6 +66,7 @@ async def execute(
             response_schema=IdentityRevisionOutput,
             temperature=config.temperature_discussion,
             max_retries=config.max_retries,
+            speaker=agent_id,
         )
         output.agent_id = agent_id
 

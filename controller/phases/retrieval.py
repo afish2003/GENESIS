@@ -59,6 +59,7 @@ async def execute(
             response_schema=RetrievalQueryOutput,
             temperature=config.temperature_structured,
             max_retries=config.max_retries,
+            speaker=agent_id,
         )
         output.agent_id = agent_id
 
@@ -97,7 +98,7 @@ async def execute(
         # sees a retrieved document.
         if agent_results:
             ctx.retrieved_context = await _summarise(
-                config, backend, agent_results,
+                config, backend, agent_results, agent_id,
             )
             _logger.info(
                 "Cycle %d: %s retrieved %d documents (%d chars into context)",
@@ -124,7 +125,7 @@ async def execute(
     return events
 
 
-async def _summarise(config, backend, results) -> str:
+async def _summarise(config, backend, results, agent_id=None) -> str:
     """Condense retrieved documents for the agent's context.
 
     Falls back to the raw excerpts if the summariser fails — losing the material
@@ -151,6 +152,10 @@ async def _summarise(config, backend, results) -> str:
                 ),
             ],
             temperature=config.temperature_structured,
+            # The controller summarising FOR this agent, not the agent
+            # speaking. Labelled anyway so the feed shows which agent's
+            # retrieval is being condensed rather than an unattributed block.
+            speaker=agent_id,
         )
         text = (result.content or "").strip()
         return text[:_MAX_RETRIEVED_CHARS] if text else raw[:_MAX_RETRIEVED_CHARS]

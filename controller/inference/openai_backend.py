@@ -109,6 +109,7 @@ class OpenAICompatBackend(InferenceBackend):
         messages: list[Message],
         temperature: float = 0.7,
         force_json: bool = False,
+        speaker: str | None = None,
     ) -> InferenceResult:
         """Send a chat completion to {base_url}/chat/completions."""
         payload: dict = {
@@ -139,7 +140,7 @@ class OpenAICompatBackend(InferenceBackend):
             payload["response_format"] = {"type": "json_object"}
 
         if self.stream_sink is not None:
-            streamed = await self._complete_streaming(payload)
+            streamed = await self._complete_streaming(payload, speaker)
             if streamed is not None:
                 return streamed
             # Streaming failed; fall through to the ordinary request rather
@@ -218,7 +219,8 @@ class OpenAICompatBackend(InferenceBackend):
             completion_tokens=usage.get("completion_tokens"),
         )
 
-    async def _complete_streaming(self, payload: dict) -> Optional[InferenceResult]:
+    async def _complete_streaming(self, payload: dict,
+                                  speaker: str | None = None) -> Optional[InferenceResult]:
         """Stream the completion, feeding deltas to `stream_sink` as they land.
 
         Returns None if streaming did not work, so the caller can fall back to a
@@ -254,7 +256,7 @@ class OpenAICompatBackend(InferenceBackend):
                         piece = (choice.get("delta") or {}).get("content")
                         if piece:
                             chunks.append(piece)
-                            self._emit(piece)
+                            self._emit(piece, speaker)
         except Exception as e:
             logger.warning(
                 "Streaming failed against %s (%s: %s); falling back to a "
@@ -274,13 +276,13 @@ class OpenAICompatBackend(InferenceBackend):
             completion_tokens=usage.get("completion_tokens"),
         )
 
-    def _emit(self, delta: str) -> None:
+    def _emit(self, delta: str, speaker: str | None = None) -> None:
         """Hand one delta to the sink, never letting it break generation."""
         sink = self.stream_sink
         if sink is None:
             return
         try:
-            sink(delta)
+            sink(delta, speaker)
         except Exception:
             logger.debug("stream_sink raised; dropping it for this run",
                          exc_info=True)

@@ -96,6 +96,7 @@ async def execute(
             response_schema=MemorySummaryOutput,
             temperature=config.temperature_structured,
             max_retries=config.max_retries,
+            speaker=agent_id,
         )
         output.agent_id = agent_id
         output.cycle_id = cycle.cycle_id

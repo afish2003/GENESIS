@@ -59,6 +59,7 @@ class OllamaBackend(InferenceBackend):
         messages: list[Message],
         temperature: float = 0.7,
         force_json: bool = False,
+        speaker: str | None = None,
     ) -> InferenceResult:
         """Send chat completion to Ollama /api/chat."""
         payload = {

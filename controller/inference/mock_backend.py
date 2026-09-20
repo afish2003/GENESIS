@@ -57,6 +57,7 @@ class MockBackend(InferenceBackend):
         messages: list[Message],
         temperature: float = 0.7,
         force_json: bool = False,
+        speaker: str | None = None,
     ) -> InferenceResult:
         self.call_count += 1
         content = messages[-1].content if messages else ""

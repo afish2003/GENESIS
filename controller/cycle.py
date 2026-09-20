@@ -266,13 +266,19 @@ class CycleOrchestrator:
             return
         self.backend.stream_sink = self._write_delta
 
-    def _write_delta(self, delta: str) -> None:
-        """Append one generation delta. Must be cheap and must not raise."""
+    def _write_delta(self, delta: str, speaker: str | None = None) -> None:
+        """Append one generation delta. Must be cheap and must not raise.
+
+        `speaker` was missing until 2026-09-20, so a discussion streamed as an
+        unattributed wall of text: you could watch them argue and not see who
+        was arguing, which is most of the point.
+        """
         try:
             with open(self._live_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps({
                     "phase": self._live_phase,
                     "cycle_id": self._live_cycle,
+                    "agent_id": speaker,
                     "delta": delta,
                 }) + "\n")
         except OSError:

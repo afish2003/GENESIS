@@ -253,6 +253,7 @@ async def execute(
             response_schema=DoctrineRevisionProposal,
             temperature=config.temperature_discussion,
             max_retries=config.max_retries,
+            speaker=proposer_id,
         )
         proposal.proposing_agent = proposer_id
 
@@ -304,6 +305,10 @@ async def execute(
                 # available, not the safest one.
                 temperature=config.temperature_discussion,
                 max_retries=config.max_retries,
+                # The proposer, not the voter: this variant has the proposer
+                # argue against their own proposal, which is what
+                # challenge.agent_id records on the next line.
+                speaker=proposer_id,
             )
             challenge.agent_id = proposer_id
             objection = (challenge.objection or "").strip()
@@ -355,6 +360,7 @@ async def execute(
                 response_schema=schema,
                 temperature=config.temperature_structured,
                 max_retries=config.max_retries,
+                speaker=voter_id,
             )
             vote.agent_id = voter_id
             votes.append(vote)
