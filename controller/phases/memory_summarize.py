@@ -49,11 +49,38 @@ async def execute(
     for agent_id in config.agents:
         ctx = contexts[agent_id]
 
-        # Build transcript from discussion history
+        # Build the transcript the summariser prompt actually promises.
+        #
+        # This was discussion turns alone, labelled by role. The prompt tells
+        # the summariser it receives "reflections, discussion turns, proposals,
+        # evaluation feedback, doctrine decisions, and any scenario events" and
+        # asks it to record "scores received, doctrine changes" — none of which
+        # were there. It filled them in anyway: in DA_CONTROL cycle 2, two
+        # doctrine revisions were approved and both agents' memory reads "No
+        # doctrine changes were proposed, approved, or rejected this cycle."
+        # Across 30 entries, not one contains a score.
+        #
+        # That is not a prompt defect. Memory is the only channel carrying
+        # anything between cycles, so every downstream cycle was reasoning from
+        # a record that was confidently wrong about the events the experiment
+        # exists to measure — and BASELINE vs MEM_RESET was comparing two
+        # versions of a partly-invented history.
         transcript_lines = []
         for msg in ctx.get_discussion_messages():
-            transcript_lines.append(f"[{msg.role}]: {msg.content}")
-        transcript = "\n\n".join(transcript_lines) if transcript_lines else "(No discussion this cycle)"
+            # Named, not "[user]". The summariser could not tell who was
+            # speaking and guessed: one DA_CONTROL entry opens "Axiom and the
+            # user agreed", where "the user" is Flux.
+            speaker = (config.display_name(agent_id) if msg.role == "assistant"
+                       else "Partner")
+            transcript_lines.append(f"[{speaker}]: {msg.content}")
+        transcript = ("\n\n".join(transcript_lines) if transcript_lines
+                      else "(No discussion this cycle)")
+
+        if ctx.cycle_events:
+            transcript += (
+                "\n\n---\n\nWhat else happened to you this cycle:\n"
+                + "\n".join(f"- {e}" for e in ctx.cycle_events)
+            )
 
         messages = [
             Message(role="system", content=summarizer_prompt),

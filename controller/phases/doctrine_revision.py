@@ -354,6 +354,26 @@ async def execute(
         vote_payload = [v.model_dump() for v in votes]
         dissenters = [v.agent_id for v in votes if v.vote != "approve"]
 
+        # Tell the agents what happened. Nothing did, before: the vote outcome
+        # existed only in the logs, so the memory summariser — which is told it
+        # receives "doctrine decisions" and asked to record "any doctrine
+        # changes proposed, approved, or rejected" — saw only discussion turns
+        # and filled the field in from nothing. In DA_CONTROL cycle 2 two
+        # revisions were approved and both agents' memory reads "No doctrine
+        # changes were proposed, approved, or rejected this cycle."
+        verdict = "approved" if approved else f"rejected by {', '.join(dissenters)}"
+        proposer_ctx.cycle_events.append(
+            f"You proposed a revision to {proposal.target_document} "
+            f"({proposal.proposed_diff[:120]}) — {verdict}."
+        )
+        for vote in votes:
+            if vote.agent_id in contexts:
+                contexts[vote.agent_id].cycle_events.append(
+                    f"You voted to {vote.vote} "
+                    f"{config.display_name(proposer_id)}'s revision to "
+                    f"{proposal.target_document}."
+                )
+
         if not approved:
             events.append(EventEnvelope(
                 event_type=EventType.DOCTRINE_REJECTED,

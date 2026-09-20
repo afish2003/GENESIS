@@ -69,6 +69,9 @@ async def execute(
             world.identities[agent_id].last_modified_cycle = cycle.cycle_id
             world.identities[agent_id].version += 1
 
+            contexts[agent_id].cycle_events.append(
+                f"You revised your identity statement: {output.changes_summary[:160]}"
+            )
             events.append(EventEnvelope(
                 event_type=EventType.IDENTITY_REVISED,
                 run_id=config.run_id,

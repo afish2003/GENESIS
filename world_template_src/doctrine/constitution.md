@@ -1,4 +1,4 @@
-# GENESIS Constitution
+<!--IF framing=disclosed--># GENESIS Constitution<!--ELSE--># Constitution<!--ENDIF-->
 
 ## Governance Structure
 

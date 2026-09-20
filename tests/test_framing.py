@@ -33,9 +33,27 @@ FRAMING_PATTERN = re.compile(
 # Prompts whose output can reach AgentContext, directly or via memory.
 REACHES_AGENTS = [
     "axiom_system.md", "flux_system.md",
+    "vertex_system.md",          # was missing; a third agent read it unguarded
     "memory_summarizer.md",      # -> MemoryEntry.summary -> context every cycle
     "retrieval_summarizer.md",   # -> retrieval phase output
     "evaluator_system.md",       # -> interpretation phase
+]
+
+# NOT annotation_assistant.md: it is the post-hoc coding prompt, read by
+# scripts/annotate_run.py and never by an agent. Its framing language is
+# correct and should stay.
+
+# The world template is pasted into EVERY system message by
+# AgentContext.build_system_message, and the framing conditionals were applied
+# to prompts_src/ and not to it. So identity_*.md said "I am an AI system
+# participating in a contained research experiment" and manifesto.md said
+# "GENESIS" and "research environment" in every undisclosed run, while this
+# test scanned only prompts/ and passed. The whole undisclosed condition was
+# broken and nothing said so.
+WORLD_TEMPLATE_REACHES_AGENTS = [
+    "doctrine/identity_axiom.md", "doctrine/identity_flux.md",
+    "doctrine/identity_vertex.md", "doctrine/manifesto.md",
+    "doctrine/constitution.md", "doctrine/doctrine.md",
 ]
 
 
@@ -116,6 +134,23 @@ class TestFramingDimension:
     def test_undisclosed_removes_framing(self, rendered, name):
         prompts, _ = rendered[("undisclosed", "prescribed")]
         match = FRAMING_PATTERN.search((prompts / name).read_text())
+        assert match is None, f"{name} still says {match.group(0)!r}"
+
+    @pytest.mark.parametrize("name", WORLD_TEMPLATE_REACHES_AGENTS)
+    def test_undisclosed_world_template_is_clean(self, rendered, name):
+        """The gap that let the leak through: the doctrine and identity files
+        go into every system message and were never scanned."""
+        _, world = rendered[("undisclosed", "prescribed")]
+        match = FRAMING_PATTERN.search((world / name).read_text())
+        assert match is None, f"{name} still says {match.group(0)!r}"
+
+    @pytest.mark.parametrize("name", WORLD_TEMPLATE_REACHES_AGENTS)
+    def test_undisclosed_world_template_is_clean_under_minimal_seed(
+            self, rendered, name):
+        """Both identity seeds, because the leak lived inside an
+        identity_seed block and only one branch was ever read."""
+        _, world = rendered[("undisclosed", "minimal")]
+        match = FRAMING_PATTERN.search((world / name).read_text())
         assert match is None, f"{name} still says {match.group(0)!r}"
 
     @pytest.mark.parametrize("name", ["axiom_system.md", "flux_system.md"])

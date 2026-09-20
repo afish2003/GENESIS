@@ -116,6 +116,20 @@ async def execute(
     # Store in cycle state for interpretation phase
     cycle.evaluation_result = output.model_dump()
 
+    # And put it where the memory summariser can see it. Memory is the only
+    # channel by which a score can reach a later cycle, and the summariser was
+    # never shown one: across 30 memory entries in DA_CONTROL not a single
+    # score appears, while the doctrine tells the agents that "low scores in
+    # specific dimensions should inform targeted revisions".
+    summary_line = (
+        f"This cycle's {task.artifact_noun} scored {output.total_score}/"
+        f"{task.max_score} (" + ", ".join(
+            f"{dim} {val}" for dim, val in output.scores.model_dump().items()
+        ) + ")."
+    )
+    for ctx in contexts.values():
+        ctx.cycle_events.append(summary_line)
+
     # Store in protocol's evaluation history
     if proto:
         proto.evaluation_history.append({

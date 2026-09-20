@@ -1071,3 +1071,67 @@ class TestAFailedPersistDoesNotCheckpoint:
         config = self._run(tmp_path, cycles=3, fail_on_cycle=1)
         events = read_events(config)
         assert len(of_type(events, "CYCLE_END")) == 3
+
+
+class TestMemoryRecordsWhatActuallyHappened:
+    """Memory was confidently wrong about the events the study measures.
+
+    The summariser prompt says it receives "reflections, discussion turns,
+    proposals, evaluation feedback, doctrine decisions, and any scenario
+    events" and asks it to record "scores received, doctrine changes". It
+    received discussion turns. So it invented the rest: in DA_CONTROL cycle 2
+    two doctrine revisions were approved and BOTH agents' memory reads "No
+    doctrine changes were proposed, approved, or rejected this cycle", and
+    across 30 entries not one contains a score.
+
+    Memory is the only channel carrying anything between cycles, so every later
+    cycle reasoned from a partly-invented record — and BASELINE vs MEM_RESET
+    was comparing two versions of it.
+    """
+
+    def _prompts(self, tmp_path):
+        config = make_config(tmp_path, total_cycles=1)
+        prepared = prepare_run(config, load_embeddings=False)
+        prepared.backend.field_hints.update(
+            {"revised_content": MOCK_REVISED_DOCTRINE})
+        seen: list[str] = []
+        original = prepared.backend.complete_structured
+
+        async def recording(*a, **kw):
+            for m in (a[0] if a else kw["messages"]):
+                seen.append(m.content)
+            return await original(*a, **kw)
+
+        prepared.backend.complete_structured = recording  # type: ignore
+        orch = CycleOrchestrator(
+            config=prepared.config, backend=prepared.backend, world=prepared.world,
+            log=prepared.log, scenario_library=prepared.scenario_library,
+            kb_manager=prepared.kb_manager,
+        )
+        asyncio.run(orch.run_all_cycles(start_cycle=0))
+        return [t for t in seen if "What else happened to you this cycle" in t]
+
+    def test_the_summariser_is_told_what_else_happened(self, tmp_path):
+        assert self._prompts(tmp_path), (
+            "the summariser still sees only discussion turns, so anything it "
+            "says about scores or doctrine is invention"
+        )
+
+    def test_the_doctrine_outcome_reaches_memory(self, tmp_path):
+        """The specific thing it was fabricating."""
+        prompts = self._prompts(tmp_path)
+        assert any("proposed a revision to" in t for t in prompts)
+        assert any("approved" in t or "rejected by" in t for t in prompts)
+
+    def test_the_evaluation_score_reaches_memory(self, tmp_path):
+        """Memory is the only path by which a score can reach a later cycle,
+        and the doctrine tells the agents to act on low scores."""
+        assert any("scored" in t and "/50" in t for t in self._prompts(tmp_path))
+
+    def test_speakers_are_named_not_roles(self, tmp_path):
+        """The summariser could not tell who spoke and guessed — one entry
+        opens "Axiom and the user agreed", where "the user" is Flux."""
+        prompts = self._prompts(tmp_path)
+        assert prompts
+        assert not any("[user]:" in t for t in prompts)
+        assert any("[axiom]:" in t.lower() or "[partner]:" in t for t in prompts)
