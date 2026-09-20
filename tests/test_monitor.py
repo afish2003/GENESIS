@@ -22,6 +22,7 @@ from controller.monitor.rules import (
     memory_advancing,
     phase_completion,
     phase_end_status,
+    persistent_phase_failure,
     phase_errors,
     sandbox_escape_attempt,
     trivial_agreement,
@@ -319,3 +320,64 @@ class TestTrivialAgreement:
         """Backfill: the real run was 23 of 23 unanimous."""
         fired = trivial_agreement(self.chain([(2, 0)] * 23))
         assert fired and fired[0].data["consecutive_unanimous_cycles"] == 23
+
+
+class TestPersistentPhaseFailure:
+    """A phase failing every cycle is broken, not unlucky.
+
+    _run_phase swallows every exception so one bad model response cannot end a
+    100-cycle run — right, but it treated "that response was malformed" and
+    "the endpoint no longer exists" identically. Observed: a 2-cycle run spent
+    an hour retrying an evaluator model removed from the deployment mid-run,
+    four attempts with backoff every cycle, with only a log line to show it.
+    """
+
+    def chain(self, failures_per_cycle):
+        """failures_per_cycle: list of iterables of failing phase names."""
+        node = None
+        for i, phases in enumerate(failures_per_cycle):
+            node = obs(
+                cycle_id=i,
+                events=[{"event_type": "NOTABLE_EVENT",
+                         "payload": {"type": "PHASE_ERROR", "phase": p}}
+                        for p in phases],
+                prev=node,
+            )
+        return node
+
+    def test_quiet_when_nothing_fails(self):
+        assert persistent_phase_failure(self.chain([[], [], [], []])) == []
+
+    def test_quiet_for_an_isolated_failure(self):
+        """One dud response must not halt a run."""
+        assert persistent_phase_failure(self.chain([[], ["evaluation"], []])) == []
+
+    def test_quiet_below_the_threshold(self):
+        assert persistent_phase_failure(
+            self.chain([["evaluation"], ["evaluation"]])) == []
+
+    def test_fires_at_three_consecutive_failures(self):
+        fired = persistent_phase_failure(
+            self.chain([["evaluation"]] * 3))
+        assert len(fired) == 1
+        assert fired[0].severity is Severity.CRITICAL
+        assert fired[0].data == {"phase": "evaluation", "consecutive_failures": 3}
+
+    def test_an_intervening_success_resets_the_streak(self):
+        """Intermittent failure is a different problem from a dead dependency."""
+        assert persistent_phase_failure(
+            self.chain([["evaluation"], [], ["evaluation"], ["evaluation"]])) == []
+
+    def test_only_the_phase_that_keeps_failing_is_reported(self):
+        fired = persistent_phase_failure(self.chain([
+            ["evaluation", "reflection"], ["evaluation"], ["evaluation"]]))
+        assert [a.data["phase"] for a in fired] == ["evaluation"]
+
+    def test_two_broken_phases_are_both_reported(self):
+        fired = persistent_phase_failure(
+            self.chain([["evaluation", "retrieval"]] * 3))
+        assert sorted(a.data["phase"] for a in fired) == ["evaluation", "retrieval"]
+
+    def test_the_detail_says_it_will_not_recover(self):
+        fired = persistent_phase_failure(self.chain([["evaluation"]] * 4))
+        assert "Every further cycle will fail the same way" in fired[0].detail

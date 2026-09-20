@@ -243,6 +243,59 @@ def trivial_agreement(obs: CycleObservation) -> list[Anomaly]:
     )]
 
 
+#: A phase failing this many cycles in a row is not a bad model response.
+PERSISTENT_FAILURE_CYCLES = 3
+
+
+def persistent_phase_failure(obs: CycleObservation) -> list[Anomaly]:
+    """The same phase failing every cycle is broken, not unlucky.
+
+    _run_phase swallows every exception so one malformed model response cannot
+    end a 100-cycle run, and that is right. But it treats "this response was
+    bad" and "the endpoint no longer exists" identically, and the second is not
+    transient.
+
+    Observed: a 2-cycle run spent an HOUR retrying an evaluator model that had
+    been removed from the deployment mid-run — four attempts with backoff,
+    every cycle, forever, with nothing but a log line to say so. Left
+    unattended overnight that burns the night and produces nothing.
+
+    Fires CRITICAL so halt_on_critical_anomaly can stop the run, which is the
+    difference between losing one cycle and losing an experiment.
+    """
+    out = []
+    failing_now = {
+        e.get("payload", {}).get("phase")
+        for e in obs.events
+        if e.get("payload", {}).get("type") == "PHASE_ERROR"
+    }
+    for phase in sorted(p for p in failing_now if p):
+        streak, node = 0, obs
+        while node is not None:
+            failed = {
+                e.get("payload", {}).get("phase") for e in node.events
+                if e.get("payload", {}).get("type") == "PHASE_ERROR"
+            }
+            if phase not in failed:
+                break
+            streak += 1
+            node = node.prev
+        if streak >= PERSISTENT_FAILURE_CYCLES:
+            out.append(Anomaly(
+                rule="persistent_phase_failure",
+                severity=Severity.CRITICAL,
+                detail=(
+                    f"Phase {phase!r} has failed {streak} cycles in a row. That "
+                    f"is a broken dependency, not a bad response — a missing "
+                    f"model, a dead endpoint, or a schema the model cannot "
+                    f"satisfy. Every further cycle will fail the same way."
+                ),
+                cycle_id=obs.cycle_id,
+                data={"phase": phase, "consecutive_failures": streak},
+            ))
+    return out
+
+
 def execution_health(obs: CycleObservation) -> list[Anomaly]:
     """Distinguish "the code did not work" from "nothing ran".
 
@@ -398,6 +451,7 @@ ALL_RULES: list[Rule] = [
     memory_advancing,
     sandbox_escape_attempt,
     trivial_agreement,
+    persistent_phase_failure,
     execution_health,
     doctrine_growth,
     context_budget,
