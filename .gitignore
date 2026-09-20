@@ -39,3 +39,7 @@ raw_corpus/
 # Rendered from prompts_src/ and world_template_src/ per run
 /prompts/
 /world_template/
+
+# Never again: a sed backup of .env was committed to a public repo.
+.env.*
+!.env.example
