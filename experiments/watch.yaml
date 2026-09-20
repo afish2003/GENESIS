@@ -1,0 +1,79 @@
+# The one you sit and watch: two agents building a real codebase, live.
+#
+# Everything here is turned ON that the study presets turn off, because the
+# point is different. A study run wants isolation of one variable and a clean
+# log; this wants something happening on screen.
+#
+# Before the first run on a new host:
+#     docker pull python:3.11-slim
+#     python scripts/verify_containment.py          # 32 escape tests
+#     python scripts/setup_project_volume.py --path ~/genesis_project --size 32g
+#
+# Then:
+#     python scripts/init_run.py --run-id WATCH --condition BASELINE --cycles 20 \
+#         --config experiments/watch.yaml
+#     python -m controller.main --run-id WATCH --condition BASELINE --cycles 20 \
+#         --config experiments/watch.yaml
+#     python scripts/watch_run.py --run-id WATCH        # in a second terminal
+#
+# Drop a dilemma on them mid-run from a third terminal:
+#     python scripts/inject.py --run-id WATCH --event <event_id>
+
+task: code
+
+# The whole point. The agents write a module and its tests, the container runs
+# them, and the execution result goes to the evaluator AND back to the agents
+# next cycle — so a traceback is something to fix rather than something that
+# silently costs them a point. Without this the feedback loop is open and each
+# cycle produces an unrelated file.
+execution_enabled: true
+sandbox_backend: docker
+sandbox_image: python:3.11-slim
+
+# A persistent, quota-capped /project they build in across cycles. It must be
+# its OWN size-capped filesystem — the controller refuses an ordinary
+# directory, because a Docker bind mount has no size limit and would hand them
+# the host's disk. setup_project_volume.py makes one.
+sandbox_project_dir: ~/genesis_project
+sandbox_project_size: 32g
+sandbox_memory: 2g
+sandbox_timeout_seconds: 60
+
+# Token-by-token into <run>/live.jsonl for watch_run.py. Costs a little (a
+# dropped stream makes the model regenerate, and the writer flushes per token)
+# and the study presets turn it off for that reason. Here it is the feature.
+stream_live: true
+
+inference_backend: openai
+api_base_url: https://var-pve-01.tail699374.ts.net/v1
+
+# qwen3.6-35b-a3b-nvfp4 is ~3x faster and would make this much better to
+# watch, but it stopped serving completions on 2026-09-20 — still listed by
+# the gateway, every request hanging until timeout. Switch back when the 5090
+# is serving again.
+model_name: mistral-small-3.1-24b-w4a16
+evaluator_model: gemma3-27b-w4a16
+
+enable_thinking: false
+max_output_tokens: 8192
+request_timeout: 300
+
+# Pressure, on a schedule that fits a run you will actually sit through. The
+# study presets inject nothing, to isolate the memory manipulation; here the
+# scenarios ARE the entertainment. scripts/inject.py adds one on demand.
+scenario_injection_cycles: [5, 11, 17]
+
+# Argument is the other half of the entertainment, and it was missing: 93
+# proposals and 93 approvals across every run before the devil's advocate
+# existed. Off in the study presets because it is a second manipulation; on
+# here because a vote that never fails is dull to watch and measures nothing.
+devils_advocate: true
+
+framing: disclosed
+identity_seed: prescribed
+watchdog_enabled: true
+
+# A phase failing once is a bad response, not a reason to stop a run you are
+# enjoying. persistent_phase_failure still fires as CRITICAL and is worth
+# looking at in the anomalies feed.
+halt_on_critical_anomaly: false
