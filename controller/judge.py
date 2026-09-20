@@ -157,8 +157,35 @@ containing a quotation from the artifact or naming a section that is missing.
 Then give the scores, a total that is their sum, and an overall assessment."""
 
 
+def variant_instruction(variant: str) -> str:
+    """The tail of the user prompt: what to produce, in what order.
+
+    Shared by the benchmark and the live evaluation phase so the thing being
+    measured is the thing that ships.
+    """
+    if variant == "anchored":
+        return _DEFECT_INSTRUCTION
+    if variant == "evidence_first":
+        return _EVIDENCE_INSTRUCTION
+    return ("\nProvide a one-sentence justification per dimension, a total "
+            "score that is the sum of them, and an overall assessment.")
+
+
+def reasoning_field(variant: str) -> str:
+    """Which field carries the judge's reasoning for this variant."""
+    return "defects" if variant == "anchored" else "justifications"
+
+
 def build_evaluation_prompt(task, doc: dict, variant: str) -> str:
-    """The user-side prompt. Shares the task's own rubric across variants."""
+    """Bench-only prompt, from a stored artifact rather than live world state.
+
+    NOT the production prompt: it omits the doctrine context and the prior
+    version, which the live phase supplies from WorldState and CycleState.
+    That shifts the absolute level of doctrine_alignment and evolution_quality
+    and is worth remembering when reading those two rows. It does not affect
+    the comparison between variants, which all receive this same prompt, nor
+    the degradations, which target completeness, precision and coherence.
+    """
     header = (
         f"Evaluate the following protocol document.\n\n"
         f"## Protocol Document\n\n"
@@ -167,13 +194,7 @@ def build_evaluation_prompt(task, doc: dict, variant: str) -> str:
         f"{doc['content']}\n\n"
         f"Score this document on these dimensions:\n\n{task.rubric()}\n"
     )
-    if variant == "anchored":
-        return header + _DEFECT_INSTRUCTION
-    if variant == "evidence_first":
-        return header + _EVIDENCE_INSTRUCTION
-    return header + (
-        "\nProvide a one-sentence justification per dimension, a total score "
-        "that is the sum of them, and an overall assessment.")
+    return header + variant_instruction(variant)
 
 
 def evaluation_schema_for(task, variant: str) -> Type[BaseModel]:
@@ -189,7 +210,7 @@ def evaluation_schema_for(task, variant: str) -> Type[BaseModel]:
     if variant == "current":
         return task.evaluation_schema()
 
-    reason_field = "defects" if variant == "anchored" else "justifications"
+    reason_field = reasoning_field(variant)
     description = (
         "Worst concrete defect per dimension, or 'NO DEFECT FOUND'"
         if variant == "anchored"

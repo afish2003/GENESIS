@@ -304,6 +304,21 @@ class RunConfig(BaseModel):
                     "only to reproduce the 2026-09-12 runs.",
     )
 
+    judge_variant: str = Field(
+        default="current",
+        pattern="^(current|evidence_first|anchored)$",
+        description="How the evaluator is asked for a score. `current` is the "
+                    "2026-09-20 configuration, in which three of five "
+                    "dimensions were constants across 71 evaluations and the "
+                    "strongest predictor of total_score was document length "
+                    "(r=+0.46) despite the prompt saying length is not "
+                    "quality. `evidence_first` writes the justification before "
+                    "the score; `anchored` requires a named defect per "
+                    "dimension and caps the score by it. See controller/judge.py "
+                    "and scripts/judge_bench.py — do not change this without "
+                    "benching it.",
+    )
+
     # The sandbox task — what the agents build each cycle. See controller/tasks/.
     task: str = Field(
         default="protocol",
@@ -548,6 +563,7 @@ def load_config(
         "INDEPENDENT_PROPOSALS": "independent_proposals",
         "DEVILS_ADVOCATE": "devils_advocate",
         "DOCTRINE_APPLY_MODE": "doctrine_apply_mode",
+        "JUDGE_VARIANT": "judge_variant",
         "WATCHDOG_ENABLED": "watchdog_enabled",
         "HALT_ON_CRITICAL_ANOMALY": "halt_on_critical_anomaly",
         "WORLD_DIR": "world_dir",

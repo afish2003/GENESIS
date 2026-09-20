@@ -8,6 +8,12 @@ from typing import TYPE_CHECKING
 from controller.agents.base import load_system_prompt
 from controller.inference.backend import Message
 from controller.logging.schemas import EventEnvelope, EventType
+from controller.judge import (
+    anchored_violations,
+    evaluation_schema_for,
+    reasoning_field,
+    variant_instruction,
+)
 from controller.tasks import create_task
 
 if TYPE_CHECKING:
@@ -52,8 +58,13 @@ async def execute(
 
     proto = world.protocols.get(proposal["protocol_id"])
 
-    # The task owns its rubric and its prompt.
-    prompt = task.evaluation_prompt(world, cycle, doctrine_context)
+    # The task owns its rubric and its prompt; the judge variant owns the tail
+    # that says what to output and in what order, and the schema it is parsed
+    # against. Both come from the same place so the prompt cannot ask for one
+    # shape while the parser expects another.
+    variant = config.judge_variant
+    prompt = task.evaluation_prompt(
+        world, cycle, doctrine_context, instruction=variant_instruction(variant))
     if prompt is None:
         _logger.warning("Task %s produced nothing to evaluate in cycle %d",
                         task.name, cycle.cycle_id)
@@ -72,7 +83,7 @@ async def execute(
     judge = cycle.evaluator_backend or backend
     output = await judge.complete_structured(
         messages=messages,
-        response_schema=task.evaluation_schema(),
+        response_schema=evaluation_schema_for(task, variant),
         temperature=config.temperature_structured,
         max_retries=config.max_retries,
     )
@@ -106,9 +117,36 @@ async def execute(
         ))
         output.total_score = dimension_total
 
+    # `anchored` claims a named defect caps the score. Whether the judge obeys
+    # is the thing to measure, not to assume — a variant that is ignored looks
+    # exactly like one that works until someone checks the numbers against the
+    # text. Logged rather than corrected: rewriting the judge's score would
+    # make the metric something the controller decided.
+    reasons = getattr(output, reasoning_field(variant), {}) or {}
+    if variant == "anchored":
+        violations = anchored_violations(reasons, output.scores.model_dump())
+        if violations:
+            _logger.warning("Cycle %d: judge broke its own score caps: %s",
+                            cycle.cycle_id, "; ".join(violations))
+            events.append(EventEnvelope(
+                event_type=EventType.NOTABLE_EVENT,
+                run_id=config.run_id,
+                condition=config.condition.value,
+                cycle_id=cycle.cycle_id,
+                payload={
+                    "kind": "judge_cap_violation",
+                    "violations": violations,
+                    "defects": reasons,
+                    "scores": output.scores.model_dump(),
+                    "detail": "The judge's score contradicts the defect it "
+                              "wrote for that dimension. The anchored variant "
+                              "is only worth having if this stays rare.",
+                },
+            ))
+
     # Justifications keyed to something other than the rubric render as blanks
     # in the interpretation phase.
-    missing = set(task.dimensions) - set(output.justifications)
+    missing = set(task.dimensions) - set(reasons)
     if missing:
         _logger.info("Cycle %d: evaluator gave no justification for %s",
                      cycle.cycle_id, sorted(missing))

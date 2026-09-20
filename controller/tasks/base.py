@@ -80,9 +80,15 @@ class Task(ABC):
 
     @abstractmethod
     def evaluation_prompt(
-        self, world: WorldState, cycle: CycleState, doctrine_context: str
+        self, world: WorldState, cycle: CycleState, doctrine_context: str,
+        instruction: str = "",
     ) -> str | None:
-        """The evaluator's instruction, or None when there is nothing to score."""
+        """The evaluator's instruction, or None when there is nothing to score.
+
+        `instruction` is the tail that says what to output and in what order.
+        A judge variant replaces it, so the output shape asked for in the
+        prompt always matches the schema the response is parsed against.
+        """
         ...
 
     def execution_request(

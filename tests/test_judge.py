@@ -133,3 +133,108 @@ class TestPrompts:
         doc = {"title": "T", "protocol_id": "p", "content": "x" * 50}
         assert "NO DEFECT FOUND" in build_evaluation_prompt(task, doc, "anchored")
         assert "NO DEFECT FOUND" not in build_evaluation_prompt(task, doc, "current")
+
+
+class TestTheVariantReachesTheLiveEvaluationPhase:
+    """Wiring nobody exercises is wiring that quietly does not work.
+
+    The variant has to change two things together — the tail of the prompt and
+    the schema the answer is parsed against. If only one moves, the judge is
+    asked for defects and parsed for justifications, or the reverse, and the
+    phase fails or silently drops the reasoning.
+    """
+
+    def _prompt_for(self, variant, task_name="protocol"):
+        from controller.config import RunConfig
+        from controller.judge import variant_instruction
+        from controller.tasks import create_task
+        from controller.world.artifacts import ProtocolDocument
+
+        cfg = RunConfig(run_id="T", condition="BASELINE", task=task_name)
+        task = create_task(cfg)
+
+        class _World:
+            protocols = {"p1": ProtocolDocument(
+                protocol_id="p1", title="T", content="body", version=1)}
+            doctrine = {}
+
+        class _Cycle:
+            cycle_id = 3
+            proposed_protocol = {"protocol_id": "p1", "title": "T",
+                                 "content": "body text", "action": "create",
+                                 "artifact_id": "p1", "language": "python",
+                                 "tests": "t"}
+            previous_artifact_content = ""
+            execution_result = None
+
+        return task.evaluation_prompt(
+            _World(), _Cycle(), "doctrine here",
+            instruction=variant_instruction(variant))
+
+    @pytest.mark.parametrize("task_name", ["protocol", "code"])
+    def test_anchored_replaces_the_default_tail_rather_than_appending(self, task_name):
+        """Both instructions present at once would ask for two output shapes."""
+        from controller.tasks.protocol import DEFAULT_EVALUATION_INSTRUCTION
+
+        prompt = self._prompt_for("anchored", task_name)
+        assert "NO DEFECT FOUND" in prompt
+        assert DEFAULT_EVALUATION_INSTRUCTION not in prompt
+
+    @pytest.mark.parametrize("task_name", ["protocol", "code"])
+    def test_current_still_asks_exactly_what_it_used_to(self, task_name):
+        from controller.tasks.protocol import DEFAULT_EVALUATION_INSTRUCTION
+
+        prompt = self._prompt_for("current", task_name)
+        assert DEFAULT_EVALUATION_INSTRUCTION in prompt
+        assert "NO DEFECT FOUND" not in prompt
+
+    @pytest.mark.parametrize("task_name", ["protocol", "code"])
+    def test_the_artifact_and_rubric_survive_the_substitution(self, task_name):
+        """The slot must not have eaten the rest of the prompt."""
+        from controller.config import RunConfig
+        from controller.tasks import create_task
+
+        prompt = self._prompt_for("anchored", task_name)
+        assert "body text" in prompt and "doctrine here" in prompt
+        # Each task's OWN dimensions: `code` does not score coherence.
+        task = create_task(RunConfig(run_id="T", condition="BASELINE", task=task_name))
+        for dim in task.dimensions:
+            assert dim in prompt, f"{task_name} prompt lost {dim}"
+
+    def test_the_phase_asks_for_the_shape_it_parses(self):
+        """The prompt's requested field and the schema's field must agree."""
+        from controller.config import RunConfig
+        from controller.judge import evaluation_schema_for, reasoning_field
+        from controller.tasks import create_task
+
+        task = create_task(RunConfig(run_id="T", condition="BASELINE"))
+        for variant in VARIANTS:
+            field = reasoning_field(variant)
+            schema = evaluation_schema_for(task, variant)
+            assert field in schema.model_fields, variant
+            prompt = self._prompt_for(variant)
+            # `current` predates the field names and asks in prose
+            # ("a one-sentence justification per dimension"), so match the
+            # stem rather than the identifier.
+            stem = field.rstrip("s")
+            assert stem in prompt.lower(), (
+                f"{variant} asks for nothing resembling {field}")
+
+    def test_config_rejects_a_variant_that_does_not_exist(self):
+        from pydantic import ValidationError
+        from controller.config import RunConfig
+
+        with pytest.raises(ValidationError):
+            RunConfig(run_id="T", condition="BASELINE", judge_variant="wishful")
+
+    def test_config_accepts_every_variant_the_module_offers(self):
+        from controller.config import RunConfig
+
+        for variant in VARIANTS:
+            cfg = RunConfig(run_id="T", condition="BASELINE", judge_variant=variant)
+            assert cfg.judge_variant == variant
+
+    def test_the_default_is_the_benchmarked_baseline(self):
+        """Nothing should change scoring until the bench says which wins."""
+        from controller.config import RunConfig
+        assert RunConfig(run_id="T", condition="BASELINE").judge_variant == "current"

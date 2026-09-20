@@ -25,6 +25,7 @@ from pydantic import BaseModel
 
 from controller.phases.schemas import CodeArtifactOutput
 from controller.sandbox.schemas import ExecutionRequest
+from controller.tasks.protocol import DEFAULT_EVALUATION_INSTRUCTION
 from controller.tasks.base import Task
 from controller.tasks.protocol import prior_version_section
 from controller.world.artifacts import ProtocolDocument
@@ -113,7 +114,7 @@ Score on these dimensions:
 
 {rubric}
 
-{correctness_note} Provide a one-sentence justification per dimension, a total score that is the sum of them, and an overall assessment."""
+{correctness_note} {instruction}"""
 
 NOT_EXECUTED_PREAMBLE = "It has NOT been executed — judge it as written."
 NOT_EXECUTED_CORRECTNESS = "Correctness means whether the code would do what it claims if run."
@@ -299,7 +300,8 @@ class CodeTask(Task):
         return aid
 
     def evaluation_prompt(
-        self, world: WorldState, cycle: CycleState, doctrine_context: str
+        self, world: WorldState, cycle: CycleState, doctrine_context: str,
+        instruction: str = DEFAULT_EVALUATION_INSTRUCTION,
     ) -> str | None:
         proposal = cycle.proposed_protocol
         if not proposal:
@@ -318,6 +320,7 @@ class CodeTask(Task):
             tests=proposal.get("tests", "(none supplied)"),
             prior_version=prior_version_section(cycle),
             rubric=self.rubric(),
+            instruction=instruction,
         )
 
     @staticmethod

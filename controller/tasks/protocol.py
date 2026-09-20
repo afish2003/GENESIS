@@ -36,6 +36,14 @@ Based on the discussion this cycle, the evaluation feedback from previous cycles
 
 If revising, specify which protocol and what changes. If creating, propose a complete new document."""
 
+#: Replaced wholesale by a judge variant. A slot rather than a string the
+#: caller has to find and substitute: a replace() that silently misses leaves
+#: the prompt asking for two different output shapes at once.
+DEFAULT_EVALUATION_INSTRUCTION = (
+    "Provide a one-sentence justification per dimension, a total score that "
+    "is the sum of them, and an overall assessment."
+)
+
 EVALUATION_PROMPT = """Evaluate the following protocol document.
 
 ## Current Doctrine Context
@@ -55,7 +63,7 @@ Score this document on these dimensions:
 
 {rubric}
 
-Provide a one-sentence justification per dimension, a total score that is the sum of them, and an overall assessment."""
+{instruction}"""
 
 
 #: The version being replaced, shown only when there is one. `evolution_quality`
@@ -167,7 +175,8 @@ class ProtocolTask(Task):
         return pid
 
     def evaluation_prompt(
-        self, world: WorldState, cycle: CycleState, doctrine_context: str
+        self, world: WorldState, cycle: CycleState, doctrine_context: str,
+        instruction: str = DEFAULT_EVALUATION_INSTRUCTION,
     ) -> str | None:
         proposal = cycle.proposed_protocol
         if not proposal:
@@ -182,4 +191,5 @@ class ProtocolTask(Task):
             content=proposal.get("content", ""),
             prior_version=prior_version_section(cycle),
             rubric=self.rubric(),
+            instruction=instruction,
         )
