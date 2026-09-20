@@ -58,6 +58,7 @@ class OpenAICompatBackend(InferenceBackend):
         model: str = "qwen2.5:7b-instruct",
         api_key: Optional[str] = None,
         timeout: float = 600.0,
+        max_output_tokens: int = 4096,
         json_mode: bool = False,
         extra_headers: Optional[dict[str, str]] = None,
     ) -> None:
@@ -74,6 +75,7 @@ class OpenAICompatBackend(InferenceBackend):
         """
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.max_output_tokens = max_output_tokens
         self.api_key = api_key or None
         self.json_mode = json_mode
         #: Cleared permanently the first time the endpoint rejects
@@ -108,6 +110,11 @@ class OpenAICompatBackend(InferenceBackend):
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "temperature": temperature,
             "stream": False,
+            # Nothing capped this. A model that fails to stop generates until
+            # the context window is full: one evaluation call ran 19 minutes
+            # against a 32k judge before being killed, and a truncated JSON
+            # response then surfaces as an unexplained parse failure.
+            "max_tokens": self.max_output_tokens,
         }
         # Only when the CALLER wants JSON. `self.json_mode` used to be OR'd in
         # here, which applied response_format to every call the backend made —
@@ -154,6 +161,16 @@ class OpenAICompatBackend(InferenceBackend):
         content = (choices[0].get("message") or {}).get("content") or ""
 
         usage = data.get("usage") or {}
+
+        # Hitting the cap means the response is cut mid-token-stream, so a
+        # structured call will fail to parse for a reason that looks like the
+        # model being bad at JSON. Say which it is.
+        if (choices[0].get("finish_reason") or "") == "length":
+            logger.warning(
+                "Response hit the %d-token output cap and was truncated. "
+                "Structured output will not parse. Raise max_output_tokens if "
+                "this phase legitimately needs more.", self.max_output_tokens,
+            )
 
         return InferenceResult(
             content=content,

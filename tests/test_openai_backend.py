@@ -1,5 +1,6 @@
 """Tests for the OpenAI-compatible backend, the mock backend, and selection."""
 
+import asyncio
 import json
 
 import httpx
@@ -212,3 +213,73 @@ class TestBackendSelection:
         described = describe_backend(cfg)
         assert "sk-secret-value" not in described
         assert "authenticated" in described
+
+
+class TestOutputIsCapped:
+    """Nothing capped generation length, and that is not a tuning detail.
+
+    No max_tokens was ever sent. A model that fails to stop generates until it
+    fills the context window: one evaluation call ran 19 MINUTES against a
+    32k-context judge before being killed, with 57 successful HTTP calls and
+    zero errors in the log — it simply never came back. At ~41 tok/s, 32k
+    tokens is 13 minutes, which is the whole of it.
+
+    The second failure mode is quieter. A response cut off at the cap is
+    truncated mid-JSON, so a structured call fails to parse — and surfaces as
+    "the model is bad at JSON" rather than "the response was cut off". Those
+    need different fixes, so the backend says which.
+    """
+
+    def test_a_cap_exists_by_default(self):
+        assert RunConfig(run_id="C", condition="BASELINE").max_output_tokens == 4096
+
+    def test_the_cap_fits_a_full_doctrine_document(self):
+        """Doctrine revisions must emit the COMPLETE revised document, which is
+        the largest legitimate output any phase asks for. Capping below it
+        would truncate every revision."""
+        config = RunConfig(run_id="C", condition="BASELINE")
+        longest_legitimate = config.max_protocol_length_tokens
+        assert config.max_output_tokens > longest_legitimate
+
+    def test_the_backend_sends_it(self):
+        seen = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen["body"] = json.loads(request.content)
+            return httpx.Response(200, json=_chat_response())
+
+        b = _backend_with(handler, max_output_tokens=1234)
+        import asyncio
+        asyncio.run(b.complete([Message(role="user", content="u")]))
+        assert seen["body"]["max_tokens"] == 1234
+        asyncio.run(b.close())
+
+    def test_truncation_is_reported_not_silent(self, caplog):
+        """Otherwise a cut-off response looks like a JSON failure."""
+        import asyncio
+        import logging
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = _chat_response()
+            body["choices"][0]["finish_reason"] = "length"
+            return httpx.Response(200, json=body)
+
+        b = _backend_with(handler)
+        with caplog.at_level(logging.WARNING):
+            asyncio.run(b.complete([Message(role="user", content="u")]))
+        assert any("truncated" in r.message.lower() or "cap" in r.message.lower()
+                   for r in caplog.records)
+        asyncio.run(b.close())
+
+    def test_a_normal_finish_is_not_reported(self, caplog):
+        import asyncio
+        import logging
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=_chat_response())
+
+        b = _backend_with(handler)
+        with caplog.at_level(logging.WARNING):
+            asyncio.run(b.complete([Message(role="user", content="u")]))
+        assert not [r for r in caplog.records if "cap" in r.message.lower()]
+        asyncio.run(b.close())

@@ -160,6 +160,15 @@ class RunConfig(BaseModel):
         "this is safe to leave on.",
     )
     request_timeout: float = Field(default=600.0, description="Per-request timeout, seconds")
+    max_output_tokens: int = Field(
+        default=4096,
+        description="Cap on tokens generated per call. No cap was ever sent, so "
+                    "a model that failed to stop generated until it filled the "
+                    "context window — one evaluation call ran 19 minutes against "
+                    "a 32k-context judge before being killed. 4096 comfortably "
+                    "fits a full doctrine document, which is the largest "
+                    "legitimate output any phase asks for.",
+    )
 
     # The evaluator. PLAN.md:133 states outright that "the evaluator is the same
     # model as the agents", and a fresh context removes episodic contamination
@@ -504,6 +513,7 @@ def load_config(
         "OPENAI_BASE_URL": "api_base_url",
         "API_JSON_MODE": "api_json_mode",
         "REQUEST_TIMEOUT": "request_timeout",
+        "MAX_OUTPUT_TOKENS": "max_output_tokens",
         "EVALUATOR_MODEL": "evaluator_model",
         "EVALUATOR_API_BASE_URL": "evaluator_api_base_url",
         "EVALUATOR_API_KEY": "evaluator_api_key",

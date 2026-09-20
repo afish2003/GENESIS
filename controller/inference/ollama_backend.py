@@ -42,9 +42,11 @@ class OllamaBackend(InferenceBackend):
         host: str = "http://192.168.1.100:11434",
         model: str = "qwen2.5:32b-instruct-q4_K_M",
         timeout: float = 600.0,
+        max_output_tokens: int = 4096,
     ) -> None:
         self.host = host.rstrip("/")
         self.model = model
+        self.max_output_tokens = max_output_tokens
         self._client = httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=30.0))
 
     async def complete(

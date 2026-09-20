@@ -135,3 +135,4 @@ class TestEndpointsThatRejectJsonMode:
     def test_a_server_error_is_not_mistaken_for_one(self):
         err = self._error(500, "response_format internal error")
         assert OpenAICompatBackend._is_response_format_rejection(err) is False
+

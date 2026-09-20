@@ -22,6 +22,7 @@ def create_backend(config: RunConfig) -> InferenceBackend:
             host=config.ollama_host,
             model=config.model_name,
             timeout=config.request_timeout,
+            max_output_tokens=config.max_output_tokens,
         )
 
     if kind == Backend.OPENAI:
@@ -39,6 +40,7 @@ def create_backend(config: RunConfig) -> InferenceBackend:
             api_key=config.api_key,
             timeout=config.request_timeout,
             json_mode=config.api_json_mode,
+            max_output_tokens=config.max_output_tokens,
         )
 
     if kind == Backend.MOCK:
