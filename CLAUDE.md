@@ -18,8 +18,14 @@ python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 
-# Run all tests
+# Run all tests — ~3s, no model is called (MockBackend)
 pytest tests/ -v
+
+# Real-inference smoke test — ~1-2 min on a 0.5b model. Catches the class of
+# bug a mock backend cannot: malformed JSON, retries, timing, schema drift.
+ollama pull qwen2.5:0.5b-instruct
+python scripts/init_run.py --run-id SMOKE --condition BASELINE --cycles 2 --config experiments/smoke.yaml
+python -m controller.main --run-id SMOKE --condition BASELINE --cycles 2 --config experiments/smoke.yaml
 
 # Run a single test file
 pytest tests/test_schemas.py -v

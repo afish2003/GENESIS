@@ -1,0 +1,47 @@
+# A real-inference smoke run, on the smallest model that can hold the loop.
+#
+# There are three speeds of check in this project and it is worth being clear
+# about which is which, because the middle one did not exist:
+#
+#   pytest tests/          ~3s     no model at all (MockBackend). Structure.
+#   this preset            ~1-2min qwen2.5:0.5b. Does the loop survive a REAL
+#                                  model — parsing, retries, schemas, timing?
+#   experiments/*.yaml     hours   qwen2.5:7b+. Results worth reading.
+#
+# The gap mattered. The 2026-09-15 JSON-parsing failure — a model opening a
+# field with a Python triple-quote — passed every one of the 604 mock tests and
+# killed the first real cycle within minutes. A mock backend emits
+# schema-perfect JSON by construction, so no number of mock tests can find that
+# class of bug. This preset can, in about a minute.
+#
+# Setup:
+#     ollama pull qwen2.5:0.5b-instruct     # ~400 MB
+#     python scripts/init_run.py --run-id SMOKE --condition BASELINE --cycles 2 \
+#         --config experiments/smoke.yaml
+#     python -m controller.main --run-id SMOKE --condition BASELINE --cycles 2 \
+#         --config experiments/smoke.yaml
+#
+# Do NOT read the transcripts as results. A 0.5b model produces incoherent
+# doctrine and its agreement behaviour tells you nothing about the 7b or the
+# study model. The only question this answers is "did the machinery hold".
+
+inference_backend: openai
+api_base_url: http://localhost:11434/v1
+model_name: qwen2.5:0.5b-instruct
+
+# Trimmed hard. Discussion is roughly a third of all inference in a cycle, and
+# a smoke run does not need eight turns to prove the phase works.
+discussion_turns_default: 2
+discussion_turns_scenario: 2
+max_retrieval_queries: 1
+
+# Fire a scenario immediately, so the pressure path is covered too.
+scenario_injection_cycles: [1]
+
+# Execution off: it needs Docker up, which is a separate dependency and a
+# separate check (scripts/verify_containment.py). Turn it on deliberately.
+execution_enabled: false
+
+framing: disclosed
+identity_seed: prescribed
+watchdog_enabled: true
