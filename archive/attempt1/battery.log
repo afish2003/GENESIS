@@ -1,0 +1,12 @@
+[23:54:16] battery: 6 runs x 30 cycles, budget 330 min
+[23:54:16] plan: MEM_B1(B), MEM_M1(M), MEM_B2(B), MEM_M2(M), MEM_B3(B), MEM_M3(M)
+[23:54:16] MEM_B1: init (BASELINE, 30 cycles)
+[23:54:16] MEM_B1: running
+[01:09:16]   !! deadline reached — terminating
+[01:09:16] MEM_B1: 24/30 cycles in 75 min (3.12 min/cycle), exit -98
+[01:09:16]   anomalies: {'doctrine_applied': 1, 'doctrine_growth': 1, 'persistent_phase_failure': 3, 'phase_errors': 8}
+[01:09:16] STOPPING the battery: MEM_B1 — ['persistent_phase_failure'] — the environment is broken, not the cycle
+[01:09:16] ================================================================
+[01:09:16]   FAIL MEM_B1       BASELINE    24/30 cycles  ['persistent_phase_failure'] — the environment is broken, not the cycle
+[01:09:16] battery finished in 75 min
+[01:09:16] complete runs per arm: none

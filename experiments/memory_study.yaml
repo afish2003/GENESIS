@@ -55,10 +55,21 @@ request_timeout: 180
 # Thinking off. With it on, a call spends its whole token budget reasoning and
 # returns an empty content field: 4.92 min/cycle and climbing, versus 0.97 flat.
 enable_thinking: false
-max_output_tokens: 4096
 
-# Resets at cycles 10, 20, 30 of 40 in the MEM_RESET arm.
-memory_reset_interval: 10
+# 4096 killed the first attempt at this battery. Identity statements and
+# doctrine grow ~650 chars/cycle, and a revision re-emits the WHOLE document,
+# so by cycle 19 the response no longer fit: JSON cut mid-string, all three
+# retries truncated identically, and identity_revision then failed every cycle
+# until persistent_phase_failure stopped the run. 38 truncation warnings in
+# that run's console, and the cliff is a function of cycle number, so it is
+# reached on any long run. Doctrine at cycle 20 is ~3.7k tokens; this is ~2x
+# headroom for a 20-cycle run and would NOT be enough at 40.
+max_output_tokens: 8192
+
+# Resets at cycles 7 and 14 of 20 in the MEM_RESET arm. Shortened from 10 to
+# keep two resets per run after the cycle count came down — one reset is a
+# manipulation that happens once, which is thin ground for a comparison.
+memory_reset_interval: 7
 
 scenario_injection_cycles: []
 framing: disclosed
