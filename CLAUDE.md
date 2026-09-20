@@ -21,10 +21,9 @@ pip install -e ".[dev]"
 # Run all tests — ~3s, no model is called (MockBackend)
 pytest tests/ -v
 
-# Real-inference smoke test — ~8 min for 2 cycles on qwen2.5:7b. Catches the
-# class of bug a mock backend cannot: malformed JSON, retries, schema drift.
-# A smaller model is slower here, not faster (see the preset's header).
-ollama serve   # the Homebrew CLI does not autostart
+# Real-inference smoke test — ~2 min for 2 cycles on the lab endpoint. Catches
+# the class of bug a mock backend cannot: malformed JSON, retries, schema
+# drift. Needs API_KEY in .env; no local Ollama is involved.
 python scripts/init_run.py --run-id SMOKE --condition BASELINE --cycles 2 --config experiments/smoke.yaml
 python -m controller.main --run-id SMOKE --condition BASELINE --cycles 2 --config experiments/smoke.yaml
 
@@ -49,8 +48,14 @@ python scripts/build_kb.py --source raw_corpus/general --output knowledge_bases/
 python scripts/watch_run.py --run-id RUN_001
 python scripts/watch_run.py --run-id RUN_001 --replay --full
 
-# Compare experimental arms
+# Compare two runs in detail; or summarise a whole battery by arm
 python scripts/compare_arms.py --runs RUN_A RUN_B --labels a b
+python scripts/summarise_battery.py --prefix MEM
+
+# Run a set of arms unattended: alternating conditions, per-run world dir,
+# hard deadline per run, completion read from checkpoint.json not RUN_END
+python scripts/run_battery.py --prefix MEM --config experiments/memory_study.yaml \
+    --cycles 30 --replicates 3 --minutes-per-run 75 --budget-minutes 330
 
 # Before enabling code execution on a host: real containers, real escape tests
 docker pull python:3.11-slim

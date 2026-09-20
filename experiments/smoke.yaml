@@ -3,7 +3,7 @@
 # Three speeds of check, with MEASURED costs rather than guessed ones:
 #
 #   pytest tests/          3s      no model at all (MockBackend). Structure.
-#   this preset            ~8 min  2 cycles on qwen2.5:7b. Real inference.
+#   this preset            ~2 min  2 cycles on the lab endpoint. Real inference.
 #   experiments/*.yaml     hours   15-100 cycles. Results worth reading.
 #
 # The middle one exists because a mock backend emits schema-perfect JSON by
@@ -11,7 +11,14 @@
 # 2026-09-15 bug — a model opening a field with a Python triple-quote — passed
 # all 604 mock tests and killed the first real cycle within minutes.
 #
-# TWO THINGS I GOT WRONG BUILDING THIS, both measured:
+# THIS PRESET NOW POINTS AT THE LAB, not at local Ollama. Everything below
+# about 7b and 0.5b timings was measured on this Mac and is kept because the
+# conclusions still hold, not because they describe what this file runs. The
+# lab endpoint does the same two cycles in about two minutes, and needs an
+# API_KEY in .env — which nothing here will tell you is missing until the
+# first call fails.
+#
+# THREE THINGS I GOT WRONG BUILDING THIS, all measured:
 #
 # A smaller model is SLOWER here. qwen2.5:0.5b ran 7.5 min/cycle against the
 # 7b's 4.4, with 8 hard parse failures and 5 phase errors in two cycles. Below
@@ -28,15 +35,20 @@
 # So this preset is worth having for what it is — 8 minutes to find out whether
 # the machinery holds, instead of 70 — and not for being fast.
 #
-# Setup:
-#     ollama serve
+# And thinking is the real cost, not size. With reasoning enabled a call
+# spends its whole token budget in the reasoning field and returns empty
+# content: 4.92 min/cycle and climbing, against 0.97 flat with it off. That is
+# a 5x difference from one boolean, larger than every other lever here
+# combined.
+#
+# Setup (no `ollama serve` — this preset does not use it):
 #     python scripts/init_run.py --run-id SMOKE --condition BASELINE --cycles 2 \
 #         --config experiments/smoke.yaml
 #     python -m controller.main --run-id SMOKE --condition BASELINE --cycles 2 \
 #         --config experiments/smoke.yaml
 #
-# Do NOT read the transcripts as results. Two cycles on a 7b tells you the loop
-# ran, nothing about doctrine, convergence or agreement.
+# Do NOT read the transcripts as results. Two cycles tells you the loop ran,
+# nothing about doctrine, convergence or agreement.
 
 inference_backend: openai
 api_base_url: https://var-pve-01.tail699374.ts.net/v1
