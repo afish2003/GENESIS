@@ -76,10 +76,17 @@ enable_thinking: false
 # headroom for a 20-cycle run and would NOT be enough at 40.
 max_output_tokens: 8192
 
-# Resets at cycles 7 and 14 of 20 in the MEM_RESET arm. Shortened from 10 to
-# keep two resets per run after the cycle count came down — one reset is a
-# manipulation that happens once, which is thin ground for a comparison.
-memory_reset_interval: 7
+# Resets at cycles 4 and 8 of 12 in the MEM_RESET arm. The interval has been
+# cut twice tonight, each time to keep two resets in a shrinking run: one
+# reset is a manipulation that happens once, which is thin ground.
+#
+# 12 cycles is SHORT and the write-up has to say so. Mistral runs 2.39
+# min/cycle against qwen's 1.04, and what is left of the night buys either
+# three runs per arm at 12 cycles or two at 20. Replication won: every finding
+# in this project's history is n=1, and within-arm spread is the first thing
+# worth knowing. What this can answer is whether the manipulation changes
+# anything detectable at all — not what it does over a long run.
+memory_reset_interval: 4
 
 scenario_injection_cycles: []
 framing: disclosed
