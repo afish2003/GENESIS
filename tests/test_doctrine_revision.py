@@ -133,3 +133,71 @@ class TestDevilsAdvocate:
         from controller.logging.schemas import EVENT_FILE_ROUTING, EventType
 
         assert EVENT_FILE_ROUTING[EventType.DOCTRINE_CHALLENGED] == "doctrine_diffs.jsonl"
+
+
+class TestDoctrineCannotGrowForever:
+    """Growth was monotonic and nothing bounded it.
+
+    MIN_RETAINED_FRACTION blocks shrinkage; nothing blocked growth, and a
+    revision re-emits the whole document. Measured 2026-09-20: doctrine
+    reached 13,183 chars in twelve cycles, and an earlier battery died at
+    cycle 19 when a revision stopped fitting in the output token budget, took
+    its three retries with the same result, and broke the phase for good. The
+    ceiling is what stops run length being capped by the agents' verbosity.
+    """
+
+    def _proposal(self, text):
+        from controller.phases.schemas import DoctrineRevisionProposal
+        return DoctrineRevisionProposal(
+            proposing_agent="axiom", target_document="doctrine.md",
+            proposed_diff="d", rationale="r", revised_content=text)
+
+    def test_growth_is_refused_at_the_ceiling(self):
+        from controller.phases.doctrine_revision import apply_revision
+        current = "x" * 1000
+        new, how, why = apply_revision(
+            current, self._proposal("y" * 1200), 5, "axiom", max_chars=1000)
+        assert new is None
+        assert "make room" in why
+
+    def test_an_equal_length_rewrite_is_allowed_at_the_ceiling(self):
+        """The ceiling must not freeze doctrine — only stop it growing."""
+        from controller.phases.doctrine_revision import apply_revision
+        current = "x" * 1000
+        new, how, why = apply_revision(
+            current, self._proposal("y" * 1000), 5, "axiom", max_chars=1000)
+        assert new is not None and how == "replace", why
+
+    def test_shrinking_at_the_ceiling_is_allowed(self):
+        from controller.phases.doctrine_revision import apply_revision
+        current = "x" * 1000
+        new, _, why = apply_revision(
+            current, self._proposal("y" * 700), 5, "axiom", max_chars=1000)
+        assert new is not None, why
+
+    def test_growth_below_the_ceiling_is_untouched(self):
+        from controller.phases.doctrine_revision import apply_revision
+        new, _, why = apply_revision(
+            "x" * 500, self._proposal("y" * 900), 5, "axiom", max_chars=1000)
+        assert new is not None, why
+
+    def test_zero_disables_the_ceiling(self):
+        from controller.phases.doctrine_revision import apply_revision
+        new, _, why = apply_revision(
+            "x" * 5000, self._proposal("y" * 50000), 5, "axiom", max_chars=0)
+        assert new is not None, why
+
+    def test_the_truncation_floor_still_wins_over_the_ceiling(self):
+        """A half-length document is a truncated generation, not a tidy-up,
+        and that check must not be bypassed by being at the ceiling."""
+        from controller.phases.doctrine_revision import apply_revision
+        new, _, why = apply_revision(
+            "x" * 1000, self._proposal("y" * 100), 5, "axiom", max_chars=1000)
+        assert new is None and "retention floor" in why
+
+    def test_the_refusal_says_what_to_do_about_it(self):
+        """The agents read these; a refusal they cannot act on wastes a cycle."""
+        from controller.phases.doctrine_revision import apply_revision
+        _, _, why = apply_revision(
+            "x" * 2000, self._proposal("y" * 2500), 5, "axiom", max_chars=1500)
+        assert "remove or condense" in why and "2000" in why

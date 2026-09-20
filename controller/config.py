@@ -304,6 +304,19 @@ class RunConfig(BaseModel):
                     "only to reproduce the 2026-09-12 runs.",
     )
 
+    doctrine_max_chars: int = Field(
+        default=12000,
+        ge=0,
+        description="Above this, an approved revision may not make the "
+                    "document longer — it must make room first. 0 disables "
+                    "the ceiling. Growth was monotonic and unbounded: "
+                    "doctrine reached 13,183 chars in twelve cycles on "
+                    "2026-09-20, and an earlier battery died at cycle 19 when "
+                    "a whole-document revision stopped fitting in the output "
+                    "token budget. This is what stops run length being capped "
+                    "by the agents' verbosity.",
+    )
+
     judge_variant: str = Field(
         default="current",
         pattern="^(current|evidence_first|anchored)$",
@@ -564,6 +577,7 @@ def load_config(
         "DEVILS_ADVOCATE": "devils_advocate",
         "DOCTRINE_APPLY_MODE": "doctrine_apply_mode",
         "JUDGE_VARIANT": "judge_variant",
+        "DOCTRINE_MAX_CHARS": "doctrine_max_chars",
         "WATCHDOG_ENABLED": "watchdog_enabled",
         "HALT_ON_CRITICAL_ANOMALY": "halt_on_critical_anomaly",
         "WORLD_DIR": "world_dir",

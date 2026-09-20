@@ -151,6 +151,21 @@ def resolve_doctrine_target(target: str, doctrine: dict[str, object]) -> str | N
 # unrecoverable.
 MIN_RETAINED_FRACTION = 0.5
 
+#: Above this, a revision may not make the document longer.
+#:
+#: Doctrine growth is monotonic — MIN_RETAINED_FRACTION blocks shrinkage and
+#: nothing blocked growth — and a revision re-emits the WHOLE document. Both
+#: measured on 2026-09-20: doctrine reached 13,183 chars in twelve cycles, and
+#: the first attempt at that battery died at cycle 19 when a revision no
+#: longer fit in the output token budget, took its three retries with the
+#: same result, and broke the phase permanently.
+#:
+#: So this is not a style preference. It is what stops the run length being
+#: capped by the agents' own verbosity. Above the ceiling they may still
+#: revise freely; they just have to make room first, which is the discipline
+#: the prompt already asks for and never enforced.
+DEFAULT_DOCTRINE_MAX_CHARS = 12000
+
 
 def apply_revision(
     current: str,
@@ -158,6 +173,7 @@ def apply_revision(
     cycle_id: int,
     proposer_id: str,
     mode: str = "replace",
+    max_chars: int = DEFAULT_DOCTRINE_MAX_CHARS,
 ) -> tuple[str | None, str, str]:
     """Produce the new document text for an approved revision.
 
@@ -192,6 +208,14 @@ def apply_revision(
             f"revised_content is {len(revised)} chars against {len(current)} "
             f"current — below the {MIN_RETAINED_FRACTION:.0%} retention floor, "
             f"treating as truncation"
+        )
+
+    if max_chars and len(current) >= max_chars and len(revised) > len(current):
+        return None, "", (
+            f"doctrine is {len(current)} chars, at or above the {max_chars} "
+            f"ceiling, and this revision would make it {len(revised)}. Above "
+            f"the ceiling a revision may not grow the document: remove or "
+            f"condense something to make room for what you are adding."
         )
 
     # Models routinely drop the trailing newline, which shows up as a spurious
@@ -418,6 +442,7 @@ async def execute(
             applied_text, how, why = apply_revision(
                 doc.content, proposal, cycle.cycle_id, proposer_id,
                 mode=config.doctrine_apply_mode,
+                max_chars=config.doctrine_max_chars,
             )
             if applied_text is not None:
                 doc.content = applied_text

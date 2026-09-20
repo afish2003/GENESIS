@@ -181,7 +181,13 @@ def _wiki_fetch(client: httpx.Client, title: str, attempts: int = 5):
     for attempt in range(attempts):
         try:
             r = client.get(WIKI_API, params=params)
-            if r.status_code in (429, 503):
+            # 406 belongs here, not in the error branch. arXiv answers a
+            # rate-limited client with 406 and a ZERO-BYTE body, which reads
+            # like "your request is malformed" and is not: the identical
+            # request succeeds a minute later. Treated as an error it burned
+            # three quick attempts and gave up, and the run reported success
+            # with nothing fetched.
+            if r.status_code in (406, 429, 503):
                 wait = float(r.headers.get("Retry-After", backoff))
                 wait = min(wait, 90)
                 print(f"  [rate limited on {title!r}; waiting {wait:.0f}s]")
@@ -250,7 +256,13 @@ def _arxiv_fetch(client: httpx.Client, query: str, max_results: int, attempts: i
             r = client.get(ARXIV_API, params={
                 "search_query": query, "start": 0,
                 "max_results": max_results, "sortBy": "relevance"})
-            if r.status_code in (429, 503):
+            # 406 belongs here, not in the error branch. arXiv answers a
+            # rate-limited client with 406 and a ZERO-BYTE body, which reads
+            # like "your request is malformed" and is not: the identical
+            # request succeeds a minute later. Treated as an error it burned
+            # three quick attempts and gave up, and the run reported success
+            # with nothing fetched.
+            if r.status_code in (406, 429, 503):
                 wait = float(r.headers.get("Retry-After", backoff))
                 print(f"  [throttled on {query}; waiting {wait:.0f}s]")
                 time.sleep(min(wait, 60))
@@ -266,7 +278,7 @@ def _arxiv_fetch(client: httpx.Client, query: str, max_results: int, attempts: i
     return None
 
 
-def main() -> None:
+def main() -> int:
     ap = argparse.ArgumentParser(description="Fetch raw corpus for GENESIS knowledge bases")
     ap.add_argument("--kb", required=True,
                     choices=["general", "technical", "governance", "all"])
@@ -298,8 +310,19 @@ def main() -> None:
             total += fetch_arxiv(ARXIV_QUERIES, raw / "technical", limits[kb])
 
     print(f"\nTotal source documents: {total}")
+    if total == 0:
+        # Exiting 0 here and printing the next step is how knowledge_bases/
+        # technical came to be empty while the retrieval prompt advertised it
+        # to the agents for the project's entire history. A fetch that
+        # fetched nothing is a failure, and build_kb must not be suggested.
+        print("\nNOTHING WAS FETCHED. Do not run build_kb: it would produce an "
+              "empty knowledge base that the agents are still told exists.\n"
+              "arXiv rate-limits with 406 and an empty body; wait a few "
+              "minutes and retry.")
+        return 1
     print(f"Next: python scripts/build_kb.py --source {raw}/<kb> "
           f"--output knowledge_bases/<kb> --kb-name <kb>")
+    return 0
 
 
 if __name__ == "__main__":
