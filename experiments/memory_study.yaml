@@ -25,6 +25,11 @@
 #
 # Also unreproducible: no seed reaches either backend. Re-running gives
 # different samples. Recorded rather than pretended away.
+#
+# ARMS ALTERNATE (B, M, B, M, B, M) rather than running three of one then
+# three of the other. If the battery runs out of wall clock — and the cycle
+# time estimate below is the least trustworthy number here — alternating
+# leaves equal n in both arms instead of three controls and no treatment.
 
 task: protocol
 execution_enabled: false
@@ -33,6 +38,19 @@ inference_backend: openai
 api_base_url: https://var-pve-01.tail699374.ts.net/v1
 model_name: qwen3.6-35b-a3b-nvfp4
 evaluator_model: gemma3-27b-w4a16
+
+# No live stream. Nobody is watching this one, and the streaming path costs
+# real money when it fails: a dropped stream makes the model regenerate the
+# whole response, and the delta writer opens/flushes/closes the feed file per
+# token — about 12k syncs a cycle. The blocking path is also the only one that
+# inspects finish_reason, so a response truncated at the token cap is reported
+# as truncation rather than as an unexplained parse failure.
+stream_live: false
+
+# 10 minutes was the default. A 35B-A3B call with a 4096-token cap does not
+# legitimately take that long, and the retry ladder multiplies it: one stalled
+# call could burn 2.5 hours of a 7-hour night before the phase even failed.
+request_timeout: 180
 
 # Thinking off. With it on, a call spends its whole token budget reasoning and
 # returns an empty content field: 4.92 min/cycle and climbing, versus 0.97 flat.

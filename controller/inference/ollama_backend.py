@@ -43,10 +43,15 @@ class OllamaBackend(InferenceBackend):
         model: str = "qwen2.5:32b-instruct-q4_K_M",
         timeout: float = 600.0,
         max_output_tokens: int = 4096,
+        enable_thinking: bool = False,
     ) -> None:
         self.host = host.rstrip("/")
         self.model = model
         self.max_output_tokens = max_output_tokens
+        # The factory passes this for every backend. Omitting it here was a
+        # TypeError at prepare_run, before cycle 0, on the DEFAULT backend —
+        # only the openai and mock paths had factory tests.
+        self.enable_thinking = enable_thinking
         self._client = httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=30.0))
 
     async def complete(
@@ -62,7 +67,14 @@ class OllamaBackend(InferenceBackend):
             "stream": False,
             "options": {
                 "temperature": temperature,
+                # num_predict was absent, so max_output_tokens was stored and
+                # never sent: Ollama generation stayed unbounded on the very
+                # backend the cap was added for. -1 is Ollama's "no limit".
+                "num_predict": self.max_output_tokens,
             },
+            # Ollama's own switch for reasoning models. With thinking on, a
+            # call spends its whole budget reasoning and returns empty content.
+            "think": self.enable_thinking,
         }
 
         response = await self._request_with_retry(payload)

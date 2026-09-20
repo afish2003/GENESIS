@@ -85,6 +85,12 @@ def create_evaluator_backend(config: RunConfig) -> InferenceBackend | None:
         api_key=config.evaluator_api_key or config.api_key,
         timeout=config.request_timeout,
         json_mode=config.api_json_mode,
+        # These were omitted, so the judge silently used the constructor
+        # defaults while the agents used the run's configured values. A run
+        # that raises max_output_tokens raises it for the agents only, and the
+        # judge starts truncating mid-JSON with nothing to say why.
+        max_output_tokens=config.max_output_tokens,
+        enable_thinking=config.enable_thinking,
     )
 
 

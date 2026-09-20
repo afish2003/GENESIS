@@ -595,6 +595,25 @@ def load_config(
         with open(config_file) as f:
             yaml_values = yaml.safe_load(f) or {}
 
+    # A YAML file that sets run_id, condition or total_cycles loses to the
+    # caller's argument, which is applied after it — silently, unlike the
+    # prompts_dir/framing conflict below which raises. That is the quietest
+    # possible way to run a MEM_RESET arm as BASELINE: the driver passes
+    # --condition BASELINE, the YAML says MEM_RESET, no reset ever fires, and
+    # every log looks perfect. Refuse instead.
+    for key, supplied in (("run_id", run_id), ("condition", condition),
+                          ("total_cycles", cycles)):
+        if key not in yaml_values:
+            continue
+        from_yaml = yaml_values[key]
+        if str(from_yaml).upper() != str(supplied).upper():
+            raise ValueError(
+                f"{config_file} sets {key}={from_yaml!r} but {key}={supplied!r} "
+                f"was passed on the command line. The command line wins, so the "
+                f"YAML value would be discarded without a word. Remove it from "
+                f"the YAML or pass the matching value."
+            )
+
     # Merge: env < yaml < explicit args < overrides
     merged = {
         **env_values,

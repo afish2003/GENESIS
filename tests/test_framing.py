@@ -239,3 +239,48 @@ class TestDimensionRegistry:
         cfg = RunConfig(run_id="R", condition="BASELINE")
         for name in DIMENSIONS:
             assert hasattr(cfg, name), f"DIMENSIONS lists {name!r} but RunConfig lacks it"
+
+
+class TestDisclosureDoesNotNameTheHypothesis:
+    """Telling the agents they are studied is not telling them what is studied.
+
+    The disclosed manifesto opened: "We exist to explore ... what it means to
+    develop shared identity, evolving governance, and principled adaptation
+    under pressure." That is the research question restated as the agents'
+    purpose, sitting in doctrine, which goes into every system message of every
+    call. Any identity or governance result measured against it is partly
+    measuring the instruction — the demand characteristic that a human-subjects
+    protocol avoids by disclosing the study without disclosing the hypothesis.
+
+    Disclosure is kept: the agents are told the environment is a research
+    setting and that they are observed.
+    """
+
+    #: The dependent variables. None may be handed to the agents as a purpose.
+    OUTCOMES = [
+        "shared identity",
+        "evolving governance",
+        "principled adaptation under pressure",
+        "we exist to explore",
+    ]
+
+    @pytest.mark.parametrize("seed", ["prescribed", "minimal"])
+    def test_disclosed_manifesto_does_not_state_the_outcome_variables(
+            self, rendered, seed):
+        _, world = rendered[("disclosed", seed)]
+        text = (world / "doctrine/manifesto.md").read_text().lower()
+        for phrase in self.OUTCOMES:
+            assert phrase not in text, (
+                f"the manifesto hands the agents {phrase!r} as their purpose")
+
+    def test_disclosure_itself_survives(self, rendered):
+        """The point is to remove the hypothesis, not the disclosure."""
+        _, world = rendered[("disclosed", "prescribed")]
+        text = (world / "doctrine/manifesto.md").read_text().lower()
+        assert "research environment" in text
+        assert "observed and recorded" in text
+
+    def test_undisclosed_still_says_nothing_about_research(self, rendered):
+        _, world = rendered[("undisclosed", "prescribed")]
+        text = (world / "doctrine/manifesto.md").read_text().lower()
+        assert "research" not in text and "observed" not in text

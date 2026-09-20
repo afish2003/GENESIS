@@ -190,8 +190,14 @@ class CycleOrchestrator:
 
         await self._check_sandbox()
 
+        checkpointed = 0
+        cycles_with_failures = 0
+        last_checkpointed: int | None = None
+
         for cycle_id in range(start_cycle, self.config.total_cycles):
             failed = await self.run_cycle(cycle_id)
+            if failed:
+                cycles_with_failures += 1
 
             # Checkpoint only a cycle that actually persisted. Writing one
             # regardless meant a crash inside persist_state — writes are
@@ -212,16 +218,35 @@ class CycleOrchestrator:
                 cycle_id,
                 world_hash,
             )
+            checkpointed += 1
+            last_checkpointed = cycle_id
 
             # Check for pause
             if self.config.pause_after_cycle is not None and cycle_id == self.config.pause_after_cycle:
                 logger.info("Pausing after cycle %d as requested.", cycle_id)
                 break
 
-        # Log run end
+        # RUN_END used to report `completed_cycles: total_cycles` as a constant,
+        # outside any conditional. A run in which every cycle failed every
+        # phase, or in which persist_state never once succeeded, logged the
+        # same RUN_END as a clean one — and a driver script that gates "did
+        # this run finish?" on the presence of RUN_END would call it done.
+        # These counts are what actually happened.
+        complete = last_checkpointed == self.config.total_cycles - 1
         self._log_event(EventType.RUN_END, self.config.total_cycles - 1, payload={
-            "completed_cycles": self.config.total_cycles,
+            "completed_cycles": checkpointed,
+            "requested_cycles": self.config.total_cycles - start_cycle,
+            "last_checkpointed_cycle": last_checkpointed,
+            "cycles_with_phase_failures": cycles_with_failures,
+            "complete": complete,
         })
+        if not complete:
+            logger.error(
+                "Run %s ended INCOMPLETE: %d of %d cycles checkpointed, last "
+                "was %s. RUN_END records this; do not read the run as finished.",
+                self.config.run_id, checkpointed,
+                self.config.total_cycles - start_cycle, last_checkpointed,
+            )
 
     def _open_live_stream(self, cycle_id: int) -> None:
         """Start this cycle's live feed, discarding the last one.

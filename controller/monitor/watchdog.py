@@ -26,9 +26,30 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _shallow(obs: CycleObservation) -> CycleObservation:
-    """A copy carrying only what the rules read from the previous cycle."""
-    return replace(obs, events=[], prev=None)
+#: How many earlier cycles the streak rules can see. The longest threshold is
+#: trivial_agreement's 5; a little slack lets a rule report a streak longer
+#: than the threshold rather than reporting exactly the threshold forever.
+HISTORY_DEPTH = 8
+
+
+def _shallow(obs: CycleObservation, depth: int = HISTORY_DEPTH) -> CycleObservation:
+    """A copy carrying only what the rules read from an earlier cycle.
+
+    `events` is dropped — each node holds that cycle's full event dump, and
+    chaining those kept the whole transcript alive in the monitor for a
+    100-cycle run. The derived `event_counts` / `failed_phases` survive, which
+    is everything the streak rules actually read.
+
+    The chain used to be cut at ONE node with its events emptied, which made
+    both streak rules unable to count past 1: persistent_phase_failure
+    (threshold 3) and trivial_agreement (threshold 5) could not fire at all.
+    persistent_phase_failure is the rule an unattended overnight run depends
+    on, so it was absent exactly where it was load-bearing.
+    """
+    if depth <= 0:
+        return replace(obs, events=[], prev=None)
+    prev = None if obs.prev is None else _shallow(obs.prev, depth - 1)
+    return replace(obs, events=[], prev=prev)
 
 # Rough chars-per-token for a cheap context estimate. tiktoken is a dependency
 # but loading an encoding per cycle is not worth it for a threshold check.
@@ -62,11 +83,12 @@ class Watchdog:
                 # A broken rule must never take down a run that is otherwise fine.
                 logger.error("Watchdog rule %s failed: %s", rule.__name__, e)
 
-        # Keep only one level of history. obs.prev used to chain all the way
-        # back to cycle 0, and each node holds that cycle's full event dump —
-        # every discussion turn and doctrine snapshot — so a 100-cycle run
-        # retained the entire transcript in the monitor. Only one step back is
-        # ever read.
+        # Bound the retained history. obs.prev used to chain all the way back
+        # to cycle 0, and each node holds that cycle's full event dump — every
+        # discussion turn and doctrine snapshot — so a 100-cycle run retained
+        # the entire transcript in the monitor. _shallow drops the dumps and
+        # keeps HISTORY_DEPTH cycles of the derived counts, which is what the
+        # streak rules read.
         obs.prev = None if self._prev is None else _shallow(self._prev)
         self._prev = obs
         self.total_fired += len(found)

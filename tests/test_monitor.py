@@ -381,3 +381,74 @@ class TestPersistentPhaseFailure:
     def test_the_detail_says_it_will_not_recover(self):
         fired = persistent_phase_failure(self.chain([["evaluation"]] * 4))
         assert "Every further cycle will fail the same way" in fired[0].detail
+
+
+class TestStreakRulesSurviveTheWatchdog:
+    """The streak rules must fire through Watchdog.observe, not just in isolation.
+
+    Every other streak test in this file builds the prev-chain by hand, which
+    is not how a run builds it. The watchdog stored the previous cycle with
+    `events=[]` to bound memory, and both streak rules read `events` — so
+    persistent_phase_failure (threshold 3) and trivial_agreement (threshold 5)
+    counted to 1 and stopped. Driving eight identical cycles through the real
+    watchdog produced zero anomalies.
+
+    That matters most for persistent_phase_failure: it is the CRITICAL rule an
+    unattended overnight run relies on to notice that, say, the evaluator model
+    is no longer deployed and every cycle is failing identically.
+    """
+
+    def _wd(self) -> Watchdog:
+        return Watchdog(RunConfig(run_id="R", condition="BASELINE"),
+                        rules=[persistent_phase_failure, trivial_agreement])
+
+    def _events(self, n: int) -> list:
+        from controller.logging.schemas import EventEnvelope
+        mk = lambda et, payload: EventEnvelope(
+            run_id="R", condition="BASELINE", cycle_id=n, phase="p",
+            event_type=et, payload=payload)
+        return [
+            mk(EventType.NOTABLE_EVENT, {"type": "PHASE_ERROR", "phase": "evaluation"}),
+            mk(EventType.DOCTRINE_APPROVED, {}),
+        ]
+
+    def test_both_streak_rules_fire_over_consecutive_observed_cycles(self):
+        wd = self._wd()
+        fired_by_cycle = {}
+        for n in range(8):
+            events = wd.observe(n, self._events(n), _FakeWorld(), cycle_seconds=60.0)
+            fired_by_cycle[n] = {e.payload["rule"] for e in events}
+
+        # Threshold 3: cycles 0,1 quiet, fires from cycle 2 on.
+        assert "persistent_phase_failure" not in fired_by_cycle[1]
+        assert "persistent_phase_failure" in fired_by_cycle[2]
+        # Threshold 5: fires from cycle 4 on.
+        assert "trivial_agreement" not in fired_by_cycle[3]
+        assert "trivial_agreement" in fired_by_cycle[4]
+
+    def test_the_retained_history_does_not_keep_the_transcript(self):
+        """Bounded memory was the reason events were dropped; keep that."""
+        wd = self._wd()
+        for n in range(20):
+            wd.observe(n, self._events(n), _FakeWorld(), cycle_seconds=60.0)
+
+        depth, node = 0, wd._prev
+        while node is not None:
+            if node is not wd._prev:
+                assert node.events == [], "an earlier cycle kept its event dump"
+            depth += 1
+            node = node.prev
+        assert depth <= 10, f"history chain grew to {depth} nodes"
+
+    def test_a_clean_cycle_breaks_the_failure_streak(self):
+        from controller.logging.schemas import EventEnvelope
+        wd = self._wd()
+        for n in range(5):
+            wd.observe(n, self._events(n), _FakeWorld(), cycle_seconds=60.0)
+        clean = [EventEnvelope(run_id="R", condition="BASELINE", cycle_id=5,
+                               phase="p", event_type=EventType.DOCTRINE_REJECTED,
+                               payload={})]
+        wd.observe(5, clean, _FakeWorld(), cycle_seconds=60.0)
+        fired = {e.payload["rule"]
+                 for e in wd.observe(6, self._events(6), _FakeWorld(), cycle_seconds=60.0)}
+        assert fired == set()

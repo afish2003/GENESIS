@@ -54,12 +54,37 @@ class CycleObservation:
     cycle_seconds: float
     prev: Optional["CycleObservation"] = None
 
+    #: Derived from `events` at construction, and the ONLY thing the rules that
+    #: walk `prev` are allowed to read from an earlier cycle. A previous
+    #: observation is stored with `events` emptied — each node holds that
+    #: cycle's full event dump, so chaining them retained the entire transcript
+    #: in the monitor. Keeping these two summaries instead is what lets a
+    #: streak rule count past 1 without that cost: every rule that counted
+    #: events across cycles was silently dead while `events` was the source.
+    event_counts: dict[str, int] = field(default_factory=dict)
+    failed_phases: set[str] = field(default_factory=set)
+
+    def __post_init__(self) -> None:
+        if self.events and not self.event_counts:
+            counts: dict[str, int] = {}
+            failed: set[str] = set()
+            for e in self.events:
+                et = e.get("event_type")
+                if et:
+                    counts[et] = counts.get(et, 0) + 1
+                payload = e.get("payload", {})
+                if payload.get("type") == "PHASE_ERROR" and payload.get("phase"):
+                    failed.add(payload["phase"])
+            self.event_counts = counts
+            self.failed_phases = failed
+
 
 Rule = Callable[[CycleObservation], list[Anomaly]]
 
 
 def _count(obs: CycleObservation, event_type: str) -> int:
-    return sum(1 for e in obs.events if e.get("event_type") == event_type)
+    """Reads the derived counts, not `events`, so it works on a previous cycle."""
+    return obs.event_counts.get(event_type, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -264,19 +289,10 @@ def persistent_phase_failure(obs: CycleObservation) -> list[Anomaly]:
     difference between losing one cycle and losing an experiment.
     """
     out = []
-    failing_now = {
-        e.get("payload", {}).get("phase")
-        for e in obs.events
-        if e.get("payload", {}).get("type") == "PHASE_ERROR"
-    }
-    for phase in sorted(p for p in failing_now if p):
+    for phase in sorted(obs.failed_phases):
         streak, node = 0, obs
         while node is not None:
-            failed = {
-                e.get("payload", {}).get("phase") for e in node.events
-                if e.get("payload", {}).get("type") == "PHASE_ERROR"
-            }
-            if phase not in failed:
+            if phase not in node.failed_phases:
                 break
             streak += 1
             node = node.prev
