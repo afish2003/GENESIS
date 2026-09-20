@@ -147,13 +147,47 @@ class TestOpenAICompatBackend:
         await b.close()
 
     @pytest.mark.asyncio
-    async def test_health_check(self):
+    async def test_health_check_generates_rather_than_listing(self):
+        """GET /models proves the gateway is up, not that the model works.
+
+        Measured 2026-09-20: a LiteLLM gateway answered /models with 200 in
+        0.3s while every completion for one of the listed models hung until
+        timeout. A battery spent 50 minutes on that model before anything
+        noticed. The check has to ask the model to produce a token.
+        """
+        seen = {}
+
         def handler(request: httpx.Request) -> httpx.Response:
-            assert str(request.url).endswith("/v1/models")
-            return httpx.Response(200, json={"data": []})
+            seen["url"] = str(request.url)
+            seen["body"] = json.loads(request.content)
+            return httpx.Response(200, json={
+                "choices": [{"message": {"content": "o"}, "finish_reason": "stop"}]})
 
         b = _backend_with(handler)
         assert await b.health_check() is True
+        assert seen["url"].endswith("/chat/completions")
+        assert seen["body"]["max_tokens"] == 1, "a probe must stay cheap"
+        await b.close()
+
+    @pytest.mark.asyncio
+    async def test_health_check_false_when_the_model_hangs(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ReadTimeout("", request=request)
+
+        b = _backend_with(handler)
+        assert await b.health_check() is False
+        await b.close()
+
+    @pytest.mark.asyncio
+    async def test_a_listed_but_unservable_model_is_not_healthy(self):
+        """The exact shape of the outage: /models fine, completions dead."""
+        def handler(request: httpx.Request) -> httpx.Response:
+            if str(request.url).endswith("/models"):
+                return httpx.Response(200, json={"data": [{"id": "m"}]})
+            raise httpx.ReadTimeout("", request=request)
+
+        b = _backend_with(handler)
+        assert await b.health_check() is False
         await b.close()
 
 
@@ -372,3 +406,48 @@ class TestThinkingToggle:
             "thinking off, not to raise the cap"
         )
         asyncio.run(b.close())
+
+
+class TestChatTemplateRejectionPhrasings:
+    """The matcher must cover how servers actually word this, not one guess.
+
+    vLLM behind LiteLLM, serving a Mistral tokenizer, answers 400 with
+    "chat_template is not supported for Mistral tokenizers." — no "_kwargs"
+    and no "enable_thinking". The matcher looked for those two strings only,
+    so the rejection was treated as a caller error and raised, and every phase
+    of every cycle failed within seconds of the run starting.
+    """
+
+    def _err(self, body: str, status: int = 400) -> httpx.HTTPStatusError:
+        request = httpx.Request("POST", "http://x/v1/chat/completions")
+        response = httpx.Response(status, text=body, request=request)
+        return httpx.HTTPStatusError("e", request=request, response=response)
+
+    @pytest.mark.parametrize("body", [
+        "chat_template is not supported for Mistral tokenizers.",
+        "litellm.BadRequestError: OpenAIException - chat_template is not "
+        "supported for Mistral tokenizers.. Received Model Group=mistral",
+        "unrecognised argument: chat_template_kwargs",
+        "enable_thinking is not a valid field",
+        "CHAT_TEMPLATE IS NOT SUPPORTED",
+    ])
+    def test_recognised(self, body):
+        from controller.inference.openai_backend import OpenAICompatBackend
+        assert OpenAICompatBackend._is_template_kwargs_rejection(self._err(body))
+
+    @pytest.mark.parametrize("body", [
+        "model 'nope' does not exist",
+        "context length exceeded",
+        "invalid api key",
+        "response_format json_object is not supported",
+    ])
+    def test_not_mistaken_for_other_400s(self, body):
+        """Still narrow: stripping the parameter must not become the response
+        to every client error."""
+        from controller.inference.openai_backend import OpenAICompatBackend
+        assert not OpenAICompatBackend._is_template_kwargs_rejection(self._err(body))
+
+    def test_a_500_is_not_this(self):
+        from controller.inference.openai_backend import OpenAICompatBackend
+        assert not OpenAICompatBackend._is_template_kwargs_rejection(
+            self._err("chat_template is not supported", status=500))

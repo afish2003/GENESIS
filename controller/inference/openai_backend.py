@@ -294,11 +294,19 @@ class OpenAICompatBackend(InferenceBackend):
         version retried EVERY 400 with the parameter stripped, which the
         existing test_4xx_not_retried caught immediately. A 400 for a bad model
         name must not be mistaken for an unsupported extension.
+
+        But it was narrow by five characters. vLLM serving a Mistral tokenizer
+        answers "chat_template is not supported for Mistral tokenizers" — no
+        "_kwargs", no "enable_thinking" — so the rejection was classified as a
+        caller error and raised. Every phase of every cycle failed on it
+        within seconds. Matching "chat_template" covers both phrasings and is
+        still specific to this parameter: no other 400 this client can provoke
+        mentions a chat template.
         """
         if error.response.status_code not in (400, 404, 422, 501):
             return False
         body = (error.response.text or "").lower()
-        return "chat_template_kwargs" in body or "enable_thinking" in body
+        return "chat_template" in body or "enable_thinking" in body
 
     @staticmethod
     def _is_response_format_rejection(error: "httpx.HTTPStatusError") -> bool:
@@ -332,7 +340,14 @@ class OpenAICompatBackend(InferenceBackend):
                 return response
             except _RETRYABLE as e:
                 last_error = e
-                logger.warning("Connection error (attempt %d): %s", attempt + 1, e)
+                # The type, because httpx.ReadTimeout stringifies to "" — so
+                # this line read "Connection error (attempt 1): " and a
+                # timeout was indistinguishable from a refused connection.
+                # They have opposite fixes: one means the endpoint is down,
+                # the other means request_timeout is too short for
+                # max_output_tokens at this model's generation rate.
+                logger.warning("%s (attempt %d): %s",
+                               type(e).__name__, attempt + 1, e or "no detail")
             except httpx.HTTPStatusError as e:
                 status = e.response.status_code
                 # 429 is transient; other 4xx are caller errors and must not retry.
@@ -348,16 +363,38 @@ class OpenAICompatBackend(InferenceBackend):
                 logger.warning("HTTP %d (attempt %d), will retry", status, attempt + 1)
 
         raise ConnectionError(
-            f"Failed to reach {url} after {len(_RETRY_DELAYS) + 1} attempts: {last_error}"
+            f"Failed to reach {url} after {len(_RETRY_DELAYS) + 1} attempts: "
+            f"{type(last_error).__name__}: {last_error or 'no detail'}"
         )
 
-    async def health_check(self) -> bool:
-        """Check the endpoint is reachable via GET {base_url}/models."""
+    async def health_check(self, timeout: float = 45.0) -> bool:
+        """Can THIS MODEL actually generate? Not just: is the gateway up?
+
+        This used to be GET /models. On a LiteLLM-style gateway that returns a
+        configured list, not a probe of the workers behind it — so when the
+        worker serving one model hung, /models answered 200 in 0.3s while
+        every completion for that model timed out. Measured, 2026-09-20: a
+        battery spent 50 minutes on a model that was already dead, and the
+        only signal was httpx.ReadTimeout, whose str() is empty.
+
+        So: generate a token. Cheap, and it fails in seconds rather than in
+        an hour of retries. Its own short timeout, because a run-length
+        request_timeout would defeat the point of checking.
+        """
         try:
-            response = await self._client.get(f"{self.base_url}/models")
+            response = await self._client.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": "ok"}],
+                    "max_tokens": 1,
+                    "temperature": 0,
+                },
+                timeout=timeout,
+            )
             return response.status_code == 200
         except httpx.HTTPError:
-            # Any transport failure means 'not reachable', never a raise.
+            # Any transport failure means 'cannot generate', never a raise.
             return False
 
     async def close(self) -> None:

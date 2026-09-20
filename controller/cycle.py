@@ -188,6 +188,7 @@ class CycleOrchestrator:
             "independent_evaluator": self.config.uses_independent_evaluator,
         })
 
+        await self._check_models()
         await self._check_sandbox()
 
         checkpointed = 0
@@ -276,6 +277,40 @@ class CycleOrchestrator:
                 }) + "\n")
         except OSError:
             pass
+
+    async def _check_models(self) -> None:
+        """Refuse to start against a model that cannot generate.
+
+        A dead model is not a slow one. Every call to it times out, every
+        phase fails identically, and the run burns its whole budget producing
+        nothing — 50 minutes of a 7-hour night, measured, before the watchdog
+        caught the pattern. The gateway's /models said 200 the entire time.
+
+        Raises rather than logging, because there is no useful run to be had
+        and the next thing that happens should be a person reading this line.
+        """
+        checks = [("agent", self.backend)]
+        if self.evaluator_backend is not None and self.evaluator_backend is not self.backend:
+            checks.append(("evaluator", self.evaluator_backend))
+
+        dead = []
+        for role, backend in checks:
+            ok = await backend.health_check()
+            model = getattr(backend, "model", "?")
+            self._log_event(EventType.NOTABLE_EVENT, -1, payload={
+                "kind": "model_health", "role": role, "model": model, "healthy": ok,
+            })
+            logger.info("Model health: %s %s -> %s", role, model,
+                        "OK" if ok else "CANNOT GENERATE")
+            if not ok:
+                dead.append(f"{role}={model}")
+
+        if dead:
+            raise RuntimeError(
+                f"Model(s) cannot generate: {', '.join(dead)}. The endpoint may "
+                f"list them and still not serve them — check the worker, not the "
+                f"gateway. Refusing to start a run that would fail every cycle."
+            )
 
     async def _check_sandbox(self) -> None:
         """Say once, at the top of the run, whether execution can actually work.

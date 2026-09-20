@@ -36,7 +36,15 @@ execution_enabled: false
 
 inference_backend: openai
 api_base_url: https://var-pve-01.tail699374.ts.net/v1
-model_name: qwen3.6-35b-a3b-nvfp4
+# qwen3.6-35b-a3b-nvfp4 stopped serving completions at 01:13 on 2026-09-20 —
+# it stayed in /models, answering 200 in 0.3s, while an 8-token request hung
+# until timeout. Agents moved to mistral-small-3.1-24b-w4a16, which was live
+# on the same gateway at the same moment, as was the judge.
+#
+# So no result here is comparable to any qwen run. That costs nothing that
+# matters: no MEM_RESET data exists on any model, and BOTH arms run on the
+# same model, which is the only comparison this battery is making.
+model_name: mistral-small-3.1-24b-w4a16
 evaluator_model: gemma3-27b-w4a16
 
 # No live stream. Nobody is watching this one, and the streaming path costs
@@ -47,10 +55,12 @@ evaluator_model: gemma3-27b-w4a16
 # as truncation rather than as an unexplained parse failure.
 stream_live: false
 
-# 10 minutes was the default. A 35B-A3B call with a 4096-token cap does not
-# legitimately take that long, and the retry ladder multiplies it: one stalled
-# call could burn 2.5 hours of a 7-hour night before the phase even failed.
-request_timeout: 180
+# 10 minutes was the default and one stalled call could burn 2.5 hours of the
+# night through the retry ladder. 180 was too tight once max_output_tokens
+# went to 8192 — a full-budget generation can legitimately exceed it — so this
+# sits between the two. The per-run deadline in run_battery.py is what
+# actually bounds a stall.
+request_timeout: 300
 
 # Thinking off. With it on, a call spends its whole token budget reasoning and
 # returns an empty content field: 4.92 min/cycle and climbing, versus 0.97 flat.
