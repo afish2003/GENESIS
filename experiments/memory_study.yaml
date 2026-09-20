@@ -1,0 +1,54 @@
+# BASELINE vs MEM_RESET — the experiment's only independent variable.
+#
+# Zero MEM_RESET runs exist. Not "few" — none, on any model, in the project's
+# history. PLAN.md section 11 makes memory persistence the manipulation and it
+# has never been manipulated. Every number ever collected is the control
+# condition.
+#
+# Design follows the April proposal's pilot rather than PLAN.md's: 40 cycles,
+# three runs per arm. Three is the proposal's replication count (section 6.3)
+# and it is three more than any previous arm has had — every finding in this
+# project so far is n=1.
+#
+# NO SCENARIO INJECTION, matching the proposal's pilot. Pressure now works and
+# is interesting, but it is a second manipulation, and the point of this run is
+# to isolate the first one. Task is `protocol`, the v1 design, rather than
+# `code`: execution adds a container, a project volume and a whole extra
+# failure surface to a run nobody will be watching.
+#
+# WHAT THIS RUN CANNOT ANSWER. The manifesto tells the agents "We exist to
+# explore... what it means to develop shared identity", which is the research
+# question restated as their purpose. So any IDENTITY result here is partly
+# measuring the instruction, and should be read that way. What survives that
+# confound: rejection counts, doctrine application rate, coordination
+# behaviour, and whether the manipulation changes anything at all.
+#
+# Also unreproducible: no seed reaches either backend. Re-running gives
+# different samples. Recorded rather than pretended away.
+
+task: protocol
+execution_enabled: false
+
+inference_backend: openai
+api_base_url: https://var-pve-01.tail699374.ts.net/v1
+model_name: qwen3.6-35b-a3b-nvfp4
+evaluator_model: gemma3-27b-w4a16
+
+# Thinking off. With it on, a call spends its whole token budget reasoning and
+# returns an empty content field: 4.92 min/cycle and climbing, versus 0.97 flat.
+enable_thinking: false
+max_output_tokens: 4096
+
+# Resets at cycles 10, 20, 30 of 40 in the MEM_RESET arm.
+memory_reset_interval: 10
+
+scenario_injection_cycles: []
+framing: disclosed
+identity_seed: prescribed
+watchdog_enabled: true
+
+# Left off deliberately. The phase_errors rule is CRITICAL and fires on a
+# single bad model response, so halting on it would end a 40-cycle run over one
+# malformed JSON. persistent_phase_failure is the rule that matters for an
+# unattended run, and the runner script checks for it between runs instead.
+halt_on_critical_anomaly: false

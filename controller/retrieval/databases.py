@@ -30,8 +30,15 @@ class KnowledgeBaseManager:
         bm25_pool_size: int = 20,
         rerank_top_k: int = 5,
         embedding_model: str = "BAAI/bge-small-en-v1.5",
+        run_id: str = "",
     ) -> None:
         self.kb_dir = kb_dir
+        #: Scopes self-history to this run. Without it every run appends to one
+        #: shared self_history.jsonl, so a later run retrieves an earlier run's
+        #: memories, doc_ids collide (every run has a memory_axiom_cycle4), and
+        #: a MEM_RESET arm's clear_self_history() wipes a BASELINE arm's past.
+        #: Six sequential runs sharing one store is not six runs.
+        self.run_id = run_id
         self.bm25_pool_size = bm25_pool_size
         self.rerank_top_k = rerank_top_k
         self.embedding_model = embedding_model
@@ -46,8 +53,14 @@ class KnowledgeBaseManager:
                 bm25_pool_size=self.bm25_pool_size,
                 rerank_top_k=self.rerank_top_k,
             )
-            kb_path = self.kb_dir / name
-            index.load_documents(kb_path)
+            if name == "self_history":
+                # Only THIS run's past. load_documents globs the directory, so
+                # without this a run would index every previous run's file that
+                # happens to sit beside its own — the agents of run 6 retrieving
+                # the memories of run 1, with colliding doc_ids.
+                self._load_own_history(index)
+            else:
+                index.load_documents(self.kb_dir / name)
 
             if index.document_count > 0:
                 index.build_index()
@@ -92,9 +105,31 @@ class KnowledgeBaseManager:
         ranked = sorted(merged.values(), key=lambda r: r.score, reverse=True)
         return ranked[:self.rerank_top_k]
 
+    def _load_own_history(self, index) -> None:
+        """Populate the self-history index from this run's file alone."""
+        index._documents = []
+        index._doc_texts = []
+        path = self.self_history_path
+        if not path.exists():
+            return
+        try:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                doc = json.loads(line)
+                index._documents.append(doc)
+                index._doc_texts.append(doc.get("text", ""))
+        except (OSError, json.JSONDecodeError) as e:
+            logger.error("Could not read self-history %s: %s — starting empty "
+                         "rather than indexing a partial file", path, e)
+            index._documents = []
+            index._doc_texts = []
+
     @property
     def self_history_path(self) -> Path:
-        return self.kb_dir / "self_history" / "self_history.jsonl"
+        """Per run. A shared file makes separate runs share a past."""
+        name = f"{self.run_id}.jsonl" if self.run_id else "self_history.jsonl"
+        return self.kb_dir / "self_history" / name
 
     def add_to_self_history(self, doc_id: str, text: str, metadata: dict | None = None) -> None:
         """Index one artifact of the agents' own past, and persist it.

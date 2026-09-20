@@ -151,6 +151,7 @@ def prepare_run(
         bm25_pool_size=config.bm25_candidate_pool,
         rerank_top_k=config.rerank_top_k,
         embedding_model=config.embedding_model,
+        run_id=config.run_id,
     )
     kb_manager.initialize(load_embeddings=load_embeddings)
 

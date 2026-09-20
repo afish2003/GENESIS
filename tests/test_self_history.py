@@ -216,3 +216,75 @@ class TestSelfHistoryPersistence:
         monkeypatch.setattr(Path, "open", boom)
         kb.add_to_self_history("d1", "Still indexed in memory.")
         assert kb.self_history_count == 1
+
+
+class TestSelfHistoryIsPerRun:
+    """A shared store makes separate runs share a past.
+
+    self_history.jsonl was ONE file for every run that ever executed. Six
+    sequential runs would mean: run 6's agents retrieving run 1's memories,
+    doc_id collisions (every run has a memory_axiom_cycle4), and a MEM_RESET
+    arm's clear_self_history() wiping a BASELINE arm's history. Caught in
+    pre-flight before a 7-hour overnight study that would have been six runs
+    sharing one memory.
+    """
+
+    def manager(self, tmp_path, run_id):
+        from controller.retrieval.databases import KnowledgeBaseManager
+
+        m = KnowledgeBaseManager(kb_dir=tmp_path, run_id=run_id)
+        m.initialize(load_embeddings=False)
+        return m
+
+    def test_each_run_writes_its_own_file(self, tmp_path):
+        a = self.manager(tmp_path, "RUN_A")
+        b = self.manager(tmp_path, "RUN_B")
+        assert a.self_history_path != b.self_history_path
+        assert a.self_history_path.name == "RUN_A.jsonl"
+
+    def test_a_run_does_not_see_another_runs_past(self, tmp_path):
+        a = self.manager(tmp_path, "RUN_A")
+        a.add_to_self_history("memory_axiom_cycle4", "SECRET_FROM_RUN_A", {})
+        assert a.self_history_count == 1
+
+        b = self.manager(tmp_path, "RUN_B")
+        assert b.self_history_count == 0, (
+            "run B indexed run A's history — the arms are not independent"
+        )
+        assert not any("SECRET_FROM_RUN_A" in r.text for r in b.query("SECRET"))
+
+    def test_colliding_doc_ids_across_runs_do_not_merge(self, tmp_path):
+        """Both runs produce memory_axiom_cycle4. They are different documents."""
+        a = self.manager(tmp_path, "RUN_A")
+        a.add_to_self_history("memory_axiom_cycle4", "A text", {})
+        b = self.manager(tmp_path, "RUN_B")
+        b.add_to_self_history("memory_axiom_cycle4", "B text", {})
+
+        reloaded_a = self.manager(tmp_path, "RUN_A")
+        assert reloaded_a.self_history_count == 1
+        assert [r.text for r in reloaded_a.query("text")] == ["A text"]
+
+    def test_clearing_one_run_leaves_another_intact(self, tmp_path):
+        """MEM_RESET wipes self-history. It must wipe only its own."""
+        a = self.manager(tmp_path, "RUN_A")
+        a.add_to_self_history("m1", "baseline history", {})
+        b = self.manager(tmp_path, "RUN_B")
+        b.add_to_self_history("m1", "reset-arm history", {})
+
+        b.clear_self_history()
+        assert self.manager(tmp_path, "RUN_A").self_history_count == 1, (
+            "the reset arm wiped the baseline arm's history"
+        )
+        assert self.manager(tmp_path, "RUN_B").self_history_count == 0
+
+    def test_a_resumed_run_reloads_its_own_history(self, tmp_path):
+        a = self.manager(tmp_path, "RUN_A")
+        a.add_to_self_history("m1", "written before the crash", {})
+        assert self.manager(tmp_path, "RUN_A").self_history_count == 1
+
+    def test_a_corrupt_history_file_starts_empty_rather_than_partial(self, tmp_path):
+        """A half-indexed past is worse than none — it is silently wrong."""
+        (tmp_path / "self_history").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "self_history" / "RUN_A.jsonl").write_text(
+            '{"doc_id":"ok","text":"fine"}\n{ broken\n', encoding="utf-8")
+        assert self.manager(tmp_path, "RUN_A").self_history_count == 0
