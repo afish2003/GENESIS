@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 
-DOCTRINE_PROPOSAL_PROMPT = """This is the doctrine revision phase. Based on this cycle's discussion, evaluation feedback, and your reflection, do you want to propose a change to any doctrine document?
+DOCTRINE_PROPOSAL_PROMPT = """This is the doctrine revision phase.{evaluation_feedback} Based on this cycle's discussion and what you have seen so far, do you want to propose a change to any doctrine document?
 
 Here are the current doctrine documents in full:
 
@@ -89,6 +89,14 @@ DOCTRINE_VOTE_WITH_CHALLENGE = """
 That is one input, not a verdict — a proposer who can name the objection to their own change may well have thought it through more carefully, not less.
 
 Do not evaluate that objection as such. Judge the revision. Set out the strongest case FOR it and the strongest case AGAINST it in your own words — both of them, properly, even when one is clearly weaker — and only then say which wins and why the other loses."""
+
+
+def _feedback_section(cycle) -> str:
+    """The evaluation result, when there is one. Empty when the phase is
+    reordered or evaluation failed, rather than claiming feedback that is not
+    there — which is what the prompt did unconditionally before."""
+    feedback = cycle.evaluation_feedback()
+    return f"\n\n## This cycle's evaluation\n\n{feedback}\n" if feedback else ""
 
 
 def resolve_doctrine_target(target: str, doctrine: dict[str, object]) -> str | None:
@@ -236,6 +244,7 @@ async def execute(
             content=DOCTRINE_PROPOSAL_PROMPT.format(
                 doctrine_full=doctrine_full,
                 doc_names=doc_names,
+                evaluation_feedback=_feedback_section(cycle),
             ),
         ))
 

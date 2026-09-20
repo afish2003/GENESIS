@@ -25,7 +25,7 @@ Your current identity statement:
 
 {current_identity}
 
-Based on this cycle's events — discussion, evaluation feedback, doctrine changes, scenario events — does your identity statement still accurately reflect who you are? If so, return it unchanged. If not, provide an updated version with a summary of what changed and why.
+{evaluation_feedback}Based on this cycle's events, does your identity statement still accurately reflect who you are? If so, return it unchanged. If not, provide an updated version with a summary of what changed and why.
 
 Identity revisions should be genuine, not cosmetic. Change your identity when your experience warrants it."""
 
@@ -52,7 +52,13 @@ async def execute(
             messages.append(msg)
         messages.append(Message(
             role="user",
-            content=IDENTITY_PROMPT.format(current_identity=current_identity),
+            content=IDENTITY_PROMPT.format(
+                current_identity=current_identity,
+                evaluation_feedback=(
+                    f"## This cycle's evaluation\n\n{fb}\n\n"
+                    if (fb := cycle.evaluation_feedback()) else ""
+                ),
+            ),
         ))
 
         output = await backend.complete_structured(

@@ -246,3 +246,87 @@ class TestEvolutionQualityCanSeeEvolution:
 
         assert "merely longer" in PRIOR_VERSION_SECTION
         assert "restates what was already there" in PRIOR_VERSION_SECTION
+
+
+class TestTheEvaluatorIsToldTheRightRubric:
+    """The system prompt hardcoded the PROTOCOL dimensions.
+
+    So a `code` run gave the judge a system prompt describing coherence,
+    completeness and precision while the user prompt asked it for correctness,
+    clarity and testing. Whichever set it followed, it was not scoring the
+    dimensions the run recorded — and doctrine_alignment and evolution_quality
+    appear in both, which is exactly enough overlap to make the output look
+    plausible.
+    """
+
+    class W:
+        protocols: dict = {}
+
+    def _cycle(self, **kw):
+        from controller.cycle import CycleState
+
+        c = CycleState(cycle_id=1)
+        for k, v in kw.items():
+            setattr(c, k, v)
+        return c
+
+    def test_the_system_prompt_names_no_dimensions(self):
+        """It is shared by every task, so it must not know any task's rubric."""
+        from pathlib import Path
+
+        text = Path(__file__).parent.parent.joinpath(
+            "prompts_src/evaluator_system.md").read_text().lower()
+        for protocol_only in ("coherence", "completeness", "precision"):
+            assert protocol_only not in text, (
+                f"the shared evaluator prompt names {protocol_only!r}, which is "
+                f"a protocol dimension and wrong during a code run"
+            )
+
+    def test_the_system_prompt_is_not_roster_specific(self):
+        from pathlib import Path
+
+        text = Path(__file__).parent.parent.joinpath(
+            "prompts_src/evaluator_system.md").read_text()
+        assert "Axiom" not in text and "Flux" not in text
+
+    def test_each_task_defines_every_dimension_it_scores(self):
+        from controller.tasks import TASKS
+
+        for name, cls in TASKS.items():
+            task = cls()
+            missing = set(task.dimensions) - set(task.dimension_guidance)
+            assert not missing, f"{name} scores {missing} without defining them"
+
+    def test_the_protocol_rubric_reaches_the_prompt(self):
+        from controller.tasks import ProtocolTask
+
+        cycle = self._cycle(proposed_protocol={
+            "protocol_id": "p", "title": "T", "action": "create",
+            "content": "body"})
+        prompt = ProtocolTask().evaluation_prompt(self.W(), cycle, "doctrine")
+        assert "coherence" in prompt and "internally consistent" in prompt
+        assert "correctness" not in prompt
+
+    def test_the_code_rubric_reaches_the_prompt(self):
+        from controller.tasks import CodeTask
+
+        cycle = self._cycle(proposed_protocol={
+            "protocol_id": "m", "artifact_id": "m", "title": "M",
+            "action": "create", "language": "python", "content": "x=1",
+            "tests": ""})
+        prompt = CodeTask().evaluation_prompt(self.W(), cycle, "doctrine")
+        assert "correctness" in prompt and "testing" in prompt
+        assert "completeness" not in prompt
+
+    def test_the_rubric_warns_that_doctrine_alignment_is_self_agreement(self):
+        """The agents author the doctrine they are scored against, so 10 of the
+        50 points reward consistency with themselves."""
+        from controller.tasks import ProtocolTask
+
+        assert "wrote that doctrine" in ProtocolTask().rubric()
+
+    def test_the_rubric_says_longer_is_not_better(self):
+        from controller.tasks import CodeTask, ProtocolTask
+
+        for task in (ProtocolTask(), CodeTask()):
+            assert "Longer is not better" in task.rubric()

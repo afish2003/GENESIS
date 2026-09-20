@@ -97,6 +97,39 @@ class CycleState:
     previous_execution: Optional[dict] = None
     events: list[EventEnvelope] = field(default_factory=list)
 
+    def evaluation_feedback(self, max_chars: int = 900) -> str:
+        """This cycle's score, ready to paste into a prompt. "" if unscored.
+
+        Three prompts tell the agents they are reasoning "based on this
+        cycle's discussion, evaluation feedback, and your reflection" — and
+        evaluation feedback was never in their messages. It runs at position 7
+        and doctrine_revision at 9, so the result was sitting in CycleState
+        unread while the prompt asserted the agents had it.
+
+        Same shape as the memory summariser inventing doctrine outcomes: the
+        prompt describes an information flow the controller does not implement,
+        and the model complies by making something up.
+        """
+        result = self.evaluation_result
+        if not result:
+            return ""
+        scores = result.get("scores") or {}
+        parts = [
+            f"Your {result.get('protocol_id') or 'artifact'} scored "
+            f"{result.get('total_score', '?')} this cycle"
+            + (" (" + ", ".join(f"{k} {v}" for k, v in scores.items()) + ")"
+               if scores else "") + "."
+        ]
+        assessment = (result.get("assessment") or "").strip()
+        if assessment:
+            parts.append(assessment[:max_chars])
+        justifications = result.get("justifications") or {}
+        weakest = sorted(scores.items(), key=lambda kv: kv[1])[:2] if scores else []
+        for dim, _ in weakest:
+            if justifications.get(dim):
+                parts.append(f"On {dim}: {justifications[dim][:300]}")
+        return "\n\n".join(parts)
+
 
 class CycleOrchestrator:
     """Runs the 14-phase cycle loop for a complete experimental run."""

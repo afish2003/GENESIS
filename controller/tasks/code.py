@@ -109,7 +109,11 @@ EVALUATION_PROMPT = """Evaluate the following code module. {preamble}
 {tests}
 ```
 {execution_report}
-Score on the five dimensions (correctness, clarity, doctrine_alignment, testing, evolution_quality), each 0-10. {correctness_note} Provide justifications, a total score, and an overall assessment."""
+Score on these dimensions:
+
+{rubric}
+
+{correctness_note} Provide a one-sentence justification per dimension, a total score that is the sum of them, and an overall assessment."""
 
 NOT_EXECUTED_PREAMBLE = "It has NOT been executed — judge it as written."
 NOT_EXECUTED_CORRECTNESS = "Correctness means whether the code would do what it claims if run."
@@ -146,6 +150,21 @@ class CodeTask(Task):
     name = "code"
     artifact_noun = "code module"
     dimensions = ("correctness", "clarity", "doctrine_alignment", "testing", "evolution_quality")
+    dimension_guidance = {
+        "correctness": "Does the code do what it claims? Judge against the "
+                       "execution result when one is shown, not against how it "
+                       "reads.",
+        "clarity": "Could another author work on this? Are names, structure "
+                   "and control flow easy to follow?",
+        "doctrine_alignment": "Is it consistent with the shared doctrine quoted "
+                              "above? The agents wrote that doctrine, so reward "
+                              "genuine consistency rather than restatement.",
+        "testing": "Do the tests exercise what matters, including the cases "
+                   "likely to break? Tests that assert nothing score low.",
+        "evolution_quality": "If a prior version is shown, is this a real "
+                             "improvement on it? If new, does it earn its place "
+                             "in the codebase? Longer is not better.",
+    }
 
     def design_prompt(self, config: RunConfig, world: WorldState, cycle: CycleState) -> str:
         active = [f"- {pid}: {p.title}" for pid, p in world.protocols.items() if not p.archived]
@@ -298,6 +317,7 @@ class CodeTask(Task):
             content=proposal.get("content", ""),
             tests=proposal.get("tests", "(none supplied)"),
             prior_version=prior_version_section(cycle),
+            rubric=self.rubric(),
         )
 
     @staticmethod

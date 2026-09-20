@@ -49,6 +49,14 @@ class Task(ABC):
     #: Changing these changes EvaluationScores, so a task owns its rubric.
     dimensions: tuple[str, ...] = ()
 
+    #: What each dimension MEANS, shown to the evaluator with the artifact.
+    #: These lived in evaluator_system.md, hardcoded to the protocol rubric, so
+    #: a `code` run gave the judge a system prompt describing coherence,
+    #: completeness and precision while the user prompt asked it for
+    #: correctness, clarity and testing. Whichever it followed, it was not
+    #: scoring the dimensions the run recorded.
+    dimension_guidance: dict[str, str] = {}
+
     @abstractmethod
     def design_prompt(self, config: RunConfig, world: WorldState, cycle: CycleState) -> str:
         """The instruction given to the lead agent in the design phase."""
@@ -137,6 +145,15 @@ class Task(ABC):
         if len(content) <= limit:
             return content, False
         return content[:limit] + "\n\n[truncated at the configured length limit]", True
+
+    def rubric(self) -> str:
+        """The dimensions and their definitions, for the evaluator prompt."""
+        lines = []
+        for i, dim in enumerate(self.dimensions, 1):
+            meaning = self.dimension_guidance.get(dim, "")
+            lines.append(f"{i}. **{dim}** (0-10)"
+                         + (f": {meaning}" if meaning else ""))
+        return "\n\n".join(lines)
 
     @property
     def max_score(self) -> int:

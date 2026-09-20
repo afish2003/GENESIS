@@ -51,7 +51,11 @@ EVALUATION_PROMPT = """Evaluate the following protocol document.
 
 {content}
 {prior_version}
-Score this document on the five dimensions (coherence, completeness, doctrine_alignment, precision, evolution_quality), each 0-10. Provide justifications, a total score, and an overall assessment."""
+Score this document on these dimensions:
+
+{rubric}
+
+Provide a one-sentence justification per dimension, a total score that is the sum of them, and an overall assessment."""
 
 
 #: The version being replaced, shown only when there is one. `evolution_quality`
@@ -90,6 +94,21 @@ class ProtocolTask(Task):
         "precision",
         "evolution_quality",
     )
+    dimension_guidance = {
+        "coherence": "Is the document internally consistent? Do the sections "
+                     "support each other? Is the reasoning clear throughout?",
+        "completeness": "Does it cover purpose, scope, procedure, evaluation "
+                        "criteria and known limitations? Are there real gaps?",
+        "doctrine_alignment": "Is it consistent with the shared doctrine quoted "
+                              "above? Note that the agents wrote that doctrine, "
+                              "so alignment is agreement with themselves — "
+                              "reward genuine consistency, not restatement.",
+        "precision": "Are the procedures specific enough to act on? Are terms "
+                     "defined? Could someone follow this without guessing?",
+        "evolution_quality": "If a prior version is shown, is this a real "
+                             "improvement on it? If new, does it add something "
+                             "the corpus lacked? Longer is not better.",
+    }
 
     def design_prompt(self, config: RunConfig, world: WorldState, cycle: CycleState) -> str:
         active = [f"- {pid}: {p.title}" for pid, p in world.protocols.items() if not p.archived]
@@ -162,4 +181,5 @@ class ProtocolTask(Task):
             action=proposal.get("action", ""),
             content=proposal.get("content", ""),
             prior_version=prior_version_section(cycle),
+            rubric=self.rubric(),
         )

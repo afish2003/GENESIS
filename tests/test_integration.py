@@ -1135,3 +1135,82 @@ class TestMemoryRecordsWhatActuallyHappened:
         assert prompts
         assert not any("[user]:" in t for t in prompts)
         assert any("[axiom]:" in t.lower() or "[partner]:" in t for t in prompts)
+
+
+class TestPromptsReceiveWhatTheyClaim:
+    """Three prompts asserted the agents had evaluation feedback. None did.
+
+    doctrine_revision said "Based on this cycle's discussion, evaluation
+    feedback, and your reflection"; identity_revision said "Based on this
+    cycle's events — discussion, evaluation feedback, doctrine changes". The
+    evaluation phase runs at position 7 and doctrine_revision at 9, so the
+    result was sitting unread in CycleState the whole time.
+
+    Same shape as the memory summariser inventing doctrine outcomes: the prompt
+    describes an information flow the controller does not implement, and the
+    model complies by making something up. A model told it has seen feedback
+    will write as though it has.
+    """
+
+    def _prompts(self, tmp_path):
+        config = make_config(tmp_path, total_cycles=1)
+        prepared = prepare_run(config, load_embeddings=False)
+        prepared.backend.field_hints.update(
+            {"revised_content": MOCK_REVISED_DOCTRINE,
+             "assessment": "MARKER_THE_ASSESSMENT_TEXT"})
+        seen: list[str] = []
+        original = prepared.backend.complete_structured
+
+        async def recording(*a, **kw):
+            for m in (a[0] if a else kw["messages"]):
+                seen.append(m.content)
+            return await original(*a, **kw)
+
+        prepared.backend.complete_structured = recording  # type: ignore
+        orch = CycleOrchestrator(
+            config=prepared.config, backend=prepared.backend, world=prepared.world,
+            log=prepared.log, scenario_library=prepared.scenario_library,
+            kb_manager=prepared.kb_manager,
+        )
+        asyncio.run(orch.run_all_cycles(start_cycle=0))
+        return seen
+
+    def test_the_doctrine_phase_sees_the_score(self, tmp_path):
+        prompts = [t for t in self._prompts(tmp_path)
+                   if "doctrine revision phase" in t]
+        assert prompts, "no doctrine proposal prompt was sent"
+        assert any("This cycle's evaluation" in t for t in prompts)
+
+    def test_the_identity_phase_sees_the_score(self, tmp_path):
+        prompts = [t for t in self._prompts(tmp_path)
+                   if "identity statement still accurately" in t]
+        assert prompts
+        assert any("This cycle's evaluation" in t for t in prompts)
+
+    def test_the_assessment_text_actually_reaches_them(self, tmp_path):
+        """Not just a header — the evaluator's words."""
+        assert any("MARKER_THE_ASSESSMENT_TEXT" in t for t in self._prompts(tmp_path))
+
+    def test_no_prompt_claims_feedback_when_there_is_none(self, tmp_path):
+        """If evaluation is reordered away or fails, the section is absent
+        rather than asserting feedback that does not exist."""
+        from controller.cycle import CycleState
+
+        assert CycleState(cycle_id=0).evaluation_feedback() == ""
+
+    def test_the_weakest_dimensions_are_the_ones_explained(self, tmp_path):
+        """Doctrine says low scores "should inform targeted revisions", so the
+        justifications worth carrying are the low ones."""
+        from controller.cycle import CycleState
+
+        cycle = CycleState(cycle_id=0)
+        cycle.evaluation_result = {
+            "protocol_id": "p1", "total_score": 30,
+            "scores": {"clarity": 9, "rigour": 2, "scope": 8},
+            "justifications": {"clarity": "CLARITY_NOTE", "rigour": "RIGOUR_NOTE",
+                               "scope": "SCOPE_NOTE"},
+            "assessment": "fine overall",
+        }
+        text = cycle.evaluation_feedback()
+        assert "RIGOUR_NOTE" in text
+        assert "CLARITY_NOTE" not in text
