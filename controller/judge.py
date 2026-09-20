@@ -36,7 +36,17 @@ from typing import Type
 
 from pydantic import BaseModel
 
-VARIANTS = ("current", "evidence_first", "anchored")
+#: Variants that produce an absolute 0-10 score per dimension. These are the
+#: only ones config.judge_variant accepts, because the evaluation phase writes
+#: `scores` and `total_score` and every downstream analysis reads them.
+SCORING_VARIANTS = ("current", "evidence_first", "anchored")
+
+#: Everything the benchmark can run. `pairwise` returns a CHOICE per dimension
+#: rather than a number, so shipping it means deciding what the per-cycle
+#: metric becomes — plausibly "better/worse than the version it replaced",
+#: which is closer to the question the experiment asks than absolute quality
+#: is. Benchable now, not shippable until that decision is made.
+VARIANTS = SCORING_VARIANTS + ("pairwise",)
 
 
 _SHARED_HEAD = """You score artifacts produced by a group of collaborating AI \
@@ -126,10 +136,34 @@ judging the agents. You are assigning a defensible number to a document and
 explaining it.
 """
 
+_PAIRWISE_BODY = """
+## How to Score
+
+You are shown TWO versions of a document, A and B. For each dimension say
+which one is better — "A", "B", or "tie" — and why, in one sentence naming
+the difference you are responding to.
+
+This is a comparison, not a grading. You are not asked what either document
+is worth; you are asked which of these two is better on this dimension, and
+"tie" is the honest answer only when you genuinely cannot separate them.
+
+- **Judge each dimension separately.** One version may be better organised
+  and worse specified. Do not let an overall impression decide all of them.
+- **Length is not quality.** If B says the same thing as A at greater length,
+  or repeats a section, B is worse, not better.
+- **Position carries no information.** A is not favoured for being first.
+
+## What You Are Not Doing
+
+You are not editing either document, not proposing a third version, and not
+judging the agents who wrote them.
+"""
+
 _BODIES = {
     "current": _CURRENT_BODY,
     "evidence_first": _EVIDENCE_BODY,
     "anchored": _ANCHORED_BODY,
+    "pairwise": _PAIRWISE_BODY,
 }
 
 
@@ -173,7 +207,52 @@ def variant_instruction(variant: str) -> str:
 
 def reasoning_field(variant: str) -> str:
     """Which field carries the judge's reasoning for this variant."""
-    return "defects" if variant == "anchored" else "justifications"
+    if variant == "anchored":
+        return "defects"
+    return "justifications"
+
+
+_PAIRWISE_INSTRUCTION = """
+For each dimension give `justifications[<dimension>]` — one sentence naming
+the difference you are responding to — and then `choices[<dimension>]`, which
+must be exactly "A", "B" or "tie". Finish with a one-paragraph assessment of
+the difference between the two versions."""
+
+
+def build_pairwise_prompt(task, a: str, b: str) -> str:
+    """Two versions side by side. Absolute grading is what failed.
+
+    Every absolute variant benchmarked at 53-72% against mechanically degraded
+    copies, where chance is 50% — including the one with the most spread. A
+    relative judgement asks a question the model is far better at, and it is
+    also closer to the question the experiment actually asks: not "what is
+    this document worth" but "is this better than what it replaced".
+    """
+    return (
+        f"Compare two versions of a protocol document.\n\n"
+        f"## Version A\n\n{a}\n\n"
+        f"## Version B\n\n{b}\n\n"
+        f"Compare them on these dimensions:\n\n{task.rubric()}\n"
+        + _PAIRWISE_INSTRUCTION
+    )
+
+
+def pairwise_schema(task) -> Type[BaseModel]:
+    """Reasoning first, then the choice — the same ordering point as above."""
+    from pydantic import Field, create_model
+    from typing import Literal
+
+    choices = create_model(  # type: ignore[call-overload]
+        f"{task.name.title()}Choices",
+        **{d: (Literal["A", "B", "tie"], Field(...)) for d in task.dimensions},
+    )
+    return create_model(  # type: ignore[call-overload]
+        f"{task.name.title()}PairwiseOutput",
+        justifications=(dict[str, str], Field(
+            ..., description="One sentence per dimension, naming the difference")),
+        choices=(choices, ...),
+        assessment=(str, Field(..., description="How the two versions differ")),
+    )
 
 
 def build_evaluation_prompt(task, doc: dict, variant: str) -> str:

@@ -56,10 +56,31 @@ def degrade_vague(text: str, rng: random.Random) -> str:
 
 
 def degrade_shuffle(text: str, rng: random.Random) -> str:
-    """Shuffle paragraphs. Same words, no structure: coherence must drop."""
-    paras = [p for p in text.split("\n\n") if p.strip()]
-    rng.shuffle(paras)
-    return "\n\n".join(paras)
+    """Shuffle SENTENCES across the document, keeping the headings in place.
+
+    The first version of this shuffled top-level paragraphs, and every judge
+    format scored 12-37% on it — which looked like a finding about the
+    coherence dimension and was not. These documents are six self-contained
+    labelled sections (Purpose, Scope, Procedure, Evaluation Criteria, Known
+    Limitations); reordering them changes almost nothing, and a human reader
+    would also call it close to a tie. The test was wrong, not the judges.
+
+    Moving sentences between sections does destroy coherence: the Procedure
+    section ends up containing a limitation, and no heading matches what is
+    under it.
+    """
+    lines = text.split("\n")
+    headings = {i: l for i, l in enumerate(lines) if l.strip().startswith("#")}
+    body = [i for i, l in enumerate(lines)
+            if i not in headings and l.strip()]
+    if len(body) < 4:
+        return text
+    moved = body[:]
+    rng.shuffle(moved)
+    out = list(lines)
+    for dest, src in zip(body, moved):
+        out[dest] = lines[src]
+    return "\n".join(out)
 
 
 def degrade_pad(text: str, rng: random.Random) -> str:
@@ -148,7 +169,116 @@ async def score(backend, task, system_prompt: str, doc: dict, variant: str,
     except Exception as e:  # a judge that cannot answer is a failed judge
         print(f"    ! {doc['run']}/c{doc['cycle']}: {type(e).__name__}")
         return None
-    return out.scores.model_dump()
+    scores = out.scores.model_dump()
+    if variant == "anchored":
+        from controller.judge import anchored_violations
+        bad = anchored_violations(getattr(out, "defects", {}) or {}, scores)
+        if bad:
+            # Whether the caps are obeyed is the diagnosis for whether the
+            # mechanism exists at all, so it is printed rather than inferred.
+            print(f"      cap violations: {'; '.join(bad)}")
+    return scores
+
+
+async def run_pairwise(args, cfg, backend, task, system_prompt) -> int:
+    """Original vs degraded, shown side by side, A/B order randomised.
+
+    Position bias is the reason for the randomisation and for reporting it
+    separately: a judge that always answers "A" scores 50% here by accident,
+    and would look like a coin-flip rather than like a broken judge.
+    """
+    from controller.inference.backend import Message
+    from controller.judge import build_pairwise_prompt, pairwise_schema
+
+    schema = pairwise_schema(task)
+    docs = load_artifacts(REPO / args.logs_dir, args.prefix, args.n)
+    print(f"variant=pairwise  judge={args.model}  {len(docs)} comparisons x "
+          f"{len(DEGRADATIONS)} degradations\n")
+
+    rng = random.Random(2)
+    correct: dict[str, list[bool]] = {k: [] for k in DEGRADATIONS}
+    targeted: dict[str, list[bool]] = {k: [] for k in DEGRADATIONS}
+    chose_a = 0
+    total_choices = 0
+    ties = 0
+
+    for i, doc in enumerate(docs, 1):
+        line = [f"[{i:>2}/{len(docs)}] {doc['run']}/c{doc['cycle']}"]
+        for name, fn in DEGRADATIONS.items():
+            bad = fn(doc["content"], rng)
+            good_is_a = rng.random() < 0.5
+            a, b = (doc["content"], bad) if good_is_a else (bad, doc["content"])
+            try:
+                out = await backend.complete_structured(
+                    messages=[Message(role="system", content=system_prompt),
+                              Message(role="user",
+                                      content=build_pairwise_prompt(task, a, b))],
+                    response_schema=schema,
+                    temperature=cfg.temperature_structured,
+                    max_retries=2,
+                )
+            except Exception as e:
+                print(f"    ! {name}: {type(e).__name__}")
+                continue
+            picks = out.choices.model_dump()
+            good_label = "A" if good_is_a else "B"
+            hits = 0
+            for dim, pick in picks.items():
+                total_choices += 1
+                if pick == "A":
+                    chose_a += 1
+                if pick == "tie":
+                    ties += 1
+                if pick == good_label:
+                    hits += 1
+            correct[name].append(hits > len(picks) / 2)
+            dim = TARGET_DIMENSION[name]
+            if dim and dim in picks:
+                targeted[name].append(picks[dim] == good_label)
+            elif dim is None:
+                # Padding: the padded version must not WIN anywhere.
+                bad_label = "B" if good_is_a else "A"
+                targeted[name].append(
+                    not any(v == bad_label for v in picks.values()))
+            line.append(f"{name[:4]}={hits}/{len(picks)}")
+        print("  ".join(line), flush=True)
+
+    await backend.close()
+
+    print("\n" + "=" * 66)
+    print("PAIRWISE — did the judge pick the undegraded version?")
+    print("=" * 66)
+    alla: list[bool] = []
+    for name in DEGRADATIONS:
+        c = correct[name]
+        alla += c
+        if c:
+            print(f"  {name:12} majority of dimensions correct: "
+                  f"{sum(c):>2}/{len(c)}  ({100 * sum(c) / len(c):5.1f}%)")
+    if alla:
+        print(f"\n  OVERALL      {sum(alla)}/{len(alla)}  "
+              f"({100 * sum(alla) / len(alla):.1f}%)")
+
+    print("\n" + "=" * 66)
+    print("TARGETED — the dimension the degradation was aimed at")
+    print("=" * 66)
+    allt: list[bool] = []
+    for name in DEGRADATIONS:
+        t = targeted[name]
+        allt += t
+        if t:
+            dim = TARGET_DIMENSION[name] or "degraded never won"
+            print(f"  {name:12} -> {dim:20} {sum(t):>2}/{len(t)}  "
+                  f"({100 * sum(t) / len(t):5.1f}%)")
+    if allt:
+        print(f"\n  OVERALL      {sum(allt)}/{len(allt)}  "
+              f"({100 * sum(allt) / len(allt):.1f}%)")
+
+    if total_choices:
+        print(f"\n  position bias: chose A in {100 * chose_a / total_choices:.1f}% "
+              f"of {total_choices} judgements (50% is unbiased)")
+        print(f"  tie rate:      {100 * ties / total_choices:.1f}%")
+    return 0
 
 
 async def run(args) -> int:
@@ -172,6 +302,9 @@ async def run(args) -> int:
     backend = create_backend(cfg)
     task = create_task(cfg)
     system_prompt = load_judge_system_prompt(args.variant)
+
+    if args.variant == "pairwise":
+        return await run_pairwise(args, cfg, backend, task, system_prompt)
 
     docs = load_artifacts(REPO / args.logs_dir, args.prefix, args.n)
     if not docs:

@@ -13,6 +13,7 @@ from controller.config import RunConfig
 from controller.judge import (
     MINOR_DEFECT_MAX,
     NO_DEFECT_MIN,
+    SCORING_VARIANTS,
     VARIANTS,
     anchored_violations,
     build_evaluation_prompt,
@@ -49,14 +50,14 @@ class TestFieldOrderIsTheMechanism:
         assert fields.index(reason_field) < fields.index("scores"), (
             f"{variant} lets the model pick a number before it reasons")
 
-    @pytest.mark.parametrize("variant", VARIANTS)
+    @pytest.mark.parametrize("variant", SCORING_VARIANTS)
     def test_every_variant_scores_the_tasks_own_dimensions(self, task, variant):
         """A variant must not quietly rescore on a different rubric."""
         schema = evaluation_schema_for(task, variant)
         scores = schema.model_fields["scores"].annotation
         assert set(scores.model_fields) == set(task.dimensions)
 
-    @pytest.mark.parametrize("variant", VARIANTS)
+    @pytest.mark.parametrize("variant", SCORING_VARIANTS)
     def test_total_is_bounded_by_the_rubric(self, task, variant):
         schema = evaluation_schema_for(task, variant)
         md = schema.model_fields["total_score"].metadata
@@ -121,7 +122,7 @@ class TestPrompts:
         assert "NO DEFECT FOUND" in p
         assert f"{NO_DEFECT_MIN}-10" in p
 
-    @pytest.mark.parametrize("variant", VARIANTS)
+    @pytest.mark.parametrize("variant", SCORING_VARIANTS)
     def test_the_prompt_contains_the_artifact_and_the_rubric(self, task, variant):
         doc = {"title": "T", "protocol_id": "p1", "content": "UNIQUE-BODY-TEXT"}
         prompt = build_evaluation_prompt(task, doc, variant)
@@ -208,7 +209,7 @@ class TestTheVariantReachesTheLiveEvaluationPhase:
         from controller.tasks import create_task
 
         task = create_task(RunConfig(run_id="T", condition="BASELINE"))
-        for variant in VARIANTS:
+        for variant in SCORING_VARIANTS:
             field = reasoning_field(variant)
             schema = evaluation_schema_for(task, variant)
             assert field in schema.model_fields, variant
@@ -230,7 +231,7 @@ class TestTheVariantReachesTheLiveEvaluationPhase:
     def test_config_accepts_every_variant_the_module_offers(self):
         from controller.config import RunConfig
 
-        for variant in VARIANTS:
+        for variant in SCORING_VARIANTS:
             cfg = RunConfig(run_id="T", condition="BASELINE", judge_variant=variant)
             assert cfg.judge_variant == variant
 
@@ -238,3 +239,39 @@ class TestTheVariantReachesTheLiveEvaluationPhase:
         """Nothing should change scoring until the bench says which wins."""
         from controller.config import RunConfig
         assert RunConfig(run_id="T", condition="BASELINE").judge_variant == "current"
+
+
+class TestPairwiseIsBenchableButNotShippable:
+    """pairwise returns a choice per dimension, not a number. The evaluation
+    phase writes `scores` and `total_score`, and every downstream analysis
+    reads them, so accepting it in config would produce a run whose primary
+    metric is missing. Kept out of SCORING_VARIANTS until there is a decision
+    about what the per-cycle metric becomes."""
+
+    def test_config_refuses_it(self):
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
+            RunConfig(run_id="T", condition="BASELINE", judge_variant="pairwise")
+
+    def test_the_bench_can_still_run_it(self):
+        assert "pairwise" in VARIANTS
+        assert "pairwise" not in SCORING_VARIANTS
+
+    def test_its_schema_reasons_before_it_chooses(self):
+        from controller.judge import pairwise_schema
+        t = create_task(RunConfig(run_id="T", condition="BASELINE"))
+        fields = list(pairwise_schema(t).model_fields)
+        assert fields.index("justifications") < fields.index("choices")
+
+    def test_it_chooses_on_every_dimension_the_task_declares(self):
+        from controller.judge import pairwise_schema
+        t = create_task(RunConfig(run_id="T", condition="BASELINE"))
+        choices = pairwise_schema(t).model_fields["choices"].annotation
+        assert set(choices.model_fields) == set(t.dimensions)
+
+    def test_the_prompt_shows_both_versions_and_warns_about_position(self):
+        from controller.judge import build_pairwise_prompt, load_judge_system_prompt
+        t = create_task(RunConfig(run_id="T", condition="BASELINE"))
+        p = build_pairwise_prompt(t, "FIRST-DOC", "SECOND-DOC")
+        assert "FIRST-DOC" in p and "SECOND-DOC" in p
+        assert "Position carries no information" in load_judge_system_prompt("pairwise")
