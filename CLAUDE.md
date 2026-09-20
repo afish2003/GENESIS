@@ -21,9 +21,10 @@ pip install -e ".[dev]"
 # Run all tests — ~3s, no model is called (MockBackend)
 pytest tests/ -v
 
-# Real-inference smoke test — ~1-2 min on a 0.5b model. Catches the class of
-# bug a mock backend cannot: malformed JSON, retries, timing, schema drift.
-ollama pull qwen2.5:0.5b-instruct
+# Real-inference smoke test — ~8 min for 2 cycles on qwen2.5:7b. Catches the
+# class of bug a mock backend cannot: malformed JSON, retries, schema drift.
+# A smaller model is slower here, not faster (see the preset's header).
+ollama serve   # the Homebrew CLI does not autostart
 python scripts/init_run.py --run-id SMOKE --condition BASELINE --cycles 2 --config experiments/smoke.yaml
 python -m controller.main --run-id SMOKE --condition BASELINE --cycles 2 --config experiments/smoke.yaml
 
