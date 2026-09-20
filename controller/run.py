@@ -139,7 +139,7 @@ def prepare_run(
             logger.warning("No checkpoint found; starting from cycle 0")
 
     if start_cycle == 0:
-        initialize_world(config.run_world_template_dir, config.world_dir)
+        initialize_world(config.run_world_template_dir, config.world_dir, config)
 
     world = WorldState(config.world_dir, agents=config.agents)
 

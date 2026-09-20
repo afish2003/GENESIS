@@ -103,6 +103,17 @@ class RunConfig(BaseModel):
         description="Ordered agent ids. Order is stable and determines turn order.",
     )
 
+    #: One line of temperament per agent, substituted into the generic
+    #: agent_system.md. A roster entry with no entry here gets a neutral line,
+    #: so `agents: [a, b, c, d]` runs with no hand-written prompt files at all.
+    #:
+    #: This exists because the alternative produced vertex_system.md, a
+    #: search-and-replace of axiom_system.md that read "You work with partners
+    #: named Axiom and your partners", described Vertex using Flux's role, and
+    #: gave Vertex Axiom's identity statement. Every three-agent result in the
+    #: project was collected against it.
+    agent_dispositions: dict[str, str] = Field(default_factory=dict)
+
     # Cycle parameters
     total_cycles: int = Field(default=100, ge=1)
     pause_after_cycle: Optional[int] = Field(
@@ -374,6 +385,13 @@ class RunConfig(BaseModel):
     def partners(self, agent_id: str) -> list[str]:
         """Every other agent on the roster, in roster order."""
         return [a for a in self.agents if a != agent_id]
+
+    def disposition(self, agent_id: str) -> str:
+        """This agent's temperamental line, or a neutral default."""
+        return self.agent_dispositions.get(agent_id) or (
+            "You have no assigned temperament. How you approach the work is "
+            "yours to develop and to state as it becomes clear."
+        )
 
     def partner_names(self, agent_id: str) -> str:
         """Comma-joined display names of an agent's partners."""

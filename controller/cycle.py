@@ -428,6 +428,7 @@ class CycleOrchestrator:
                 identity=self.world.identities[agent_id],
                 memory=self.world.memory[agent_id],
                 doctrine_texts=doctrine_texts,
+                config=self.config,
             )
         return contexts
 

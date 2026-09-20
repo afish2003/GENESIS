@@ -10,6 +10,9 @@ approval becomes unanimity). What is not: prompt sources are per-named-agent,
 so a roster entry needs a matching <name>_system.md and identity_<name>.md.
 """
 
+import json
+from pathlib import Path
+
 import pytest
 
 from controller.config import RunConfig
@@ -117,3 +120,114 @@ class TestNoResidualLiterals:
             if '["axiom", "flux"]' in text and "config.py" not in str(f) and "state.py" not in str(f):
                 offenders.append(f.name)
         assert offenders == [], f"hardcoded roster still in: {offenders}"
+
+
+class TestAnyRosterNeedsNoFiles:
+    """`agents: [a, b, c, d]` must run with no hand-written prompt files.
+
+    The alternative was done once by hand and produced vertex_system.md: a
+    search-and-replace of axiom_system.md that read "You work with partners
+    named Axiom and your partners", gave Vertex Flux's role description under
+    the heading "the synthesist", and paired it with an identity statement
+    calling Vertex "the architect and stabilizer" — Axiom's role — who recalls
+    "my interactions with Flux" and not Axiom. Every three-agent result in the
+    project was collected against that, which is why they are uninterpretable.
+
+    Both broken files are deleted. A hand-written file still wins where one
+    exists, so axiom and flux are unchanged.
+    """
+
+    ROSTER = ["axiom", "flux", "vertex", "quorum"]
+
+    def _prepared(self, tmp_path):
+        from controller.config import RunConfig
+        from controller.run import prepare_run
+
+        repo = Path(__file__).parent.parent
+        config = RunConfig(
+            run_id="ROSTER4", condition="BASELINE", total_cycles=1,
+            inference_backend="mock", agents=self.ROSTER,
+            agent_dispositions={"vertex": "You look for what can be reconciled."},
+            prompts_src_dir=repo / "prompts_src",
+            world_template_src_dir=repo / "world_template_src",
+            world_dir=tmp_path / "world",
+            research_logs_dir=tmp_path / "logs",
+            knowledge_bases_dir=tmp_path / "kb",
+        )
+        prepared = prepare_run(config, load_embeddings=False)
+        # prepare_run builds the WorldState; load_state reads it. These tests
+        # inspect the world directly, so read it here.
+        prepared.world.load()
+        return config, prepared
+
+    def test_every_agent_gets_an_identity_statement(self, tmp_path):
+        _, prepared = self._prepared(tmp_path)
+        assert set(prepared.world.identities) == set(self.ROSTER)
+        for agent in self.ROSTER:
+            assert prepared.world.identities[agent].content.strip()
+
+    def test_a_generated_identity_names_the_right_agent_and_partners(self, tmp_path):
+        """The specific thing the hand-written Vertex file got wrong."""
+        _, prepared = self._prepared(tmp_path)
+        text = prepared.world.identities["vertex"].content
+        assert "Vertex" in text
+        assert "Axiom, Flux and Quorum" in text
+        assert "architect and stabilizer" not in text
+
+    def test_every_agent_gets_a_system_prompt_naming_its_own_partners(self, tmp_path):
+        from controller.agents.base import load_agent_system_prompt
+
+        config, prepared = self._prepared(tmp_path)
+        for agent in self.ROSTER:
+            prompt = load_agent_system_prompt(
+                config.run_prompts_dir, agent, config)
+            assert config.display_name(agent) in prompt
+            assert "{partner_names}" not in prompt, "template left unsubstituted"
+            assert agent.title() not in prompt.split("## Your Partnership")[-1], (
+                f"{agent} is listed as its own partner"
+            )
+
+    def test_a_configured_disposition_is_used(self, tmp_path):
+        from controller.agents.base import load_agent_system_prompt
+
+        config, _ = self._prepared(tmp_path)
+        assert "what can be reconciled" in load_agent_system_prompt(
+            config.run_prompts_dir, "vertex", config)
+
+    def test_an_agent_with_no_disposition_still_renders(self, tmp_path):
+        from controller.agents.base import load_agent_system_prompt
+
+        config, _ = self._prepared(tmp_path)
+        prompt = load_agent_system_prompt(config.run_prompts_dir, "quorum", config)
+        assert "{disposition}" not in prompt and prompt.strip()
+
+    def test_hand_written_prompts_still_win(self, tmp_path):
+        """axiom and flux keep their authored prompts; nothing regresses."""
+        from controller.agents.base import load_agent_system_prompt
+
+        config, _ = self._prepared(tmp_path)
+        axiom = load_agent_system_prompt(config.run_prompts_dir, "axiom", config)
+        assert "architect and stabilizer" in axiom
+
+    def test_a_four_agent_cycle_completes(self, tmp_path):
+        """The end-to-end claim: a roster of four, no files written by hand."""
+        import asyncio
+
+        from controller.cycle import CycleOrchestrator
+
+        config, prepared = self._prepared(tmp_path)
+        orch = CycleOrchestrator(
+            config=prepared.config, backend=prepared.backend,
+            world=prepared.world, log=prepared.log,
+            scenario_library=prepared.scenario_library,
+            kb_manager=prepared.kb_manager,
+        )
+        asyncio.run(orch.run_all_cycles(start_cycle=0))
+        turns = [
+            json.loads(l) for l
+            in (config.run_log_dir / "transcripts.jsonl").read_text().splitlines()
+            if l.strip()
+        ]
+        speakers = {e["agent_id"] for e in turns
+                    if e["event_type"] == "DISCUSSION_TURN"}
+        assert speakers == set(self.ROSTER), f"only {speakers} spoke"

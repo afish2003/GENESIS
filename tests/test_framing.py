@@ -33,7 +33,7 @@ FRAMING_PATTERN = re.compile(
 # Prompts whose output can reach AgentContext, directly or via memory.
 REACHES_AGENTS = [
     "axiom_system.md", "flux_system.md",
-    "vertex_system.md",          # was missing; a third agent read it unguarded
+    "agent_system.md",           # the generic template every other agent gets
     "memory_summarizer.md",      # -> MemoryEntry.summary -> context every cycle
     "retrieval_summarizer.md",   # -> retrieval phase output
     "evaluator_system.md",       # -> interpretation phase
@@ -52,7 +52,7 @@ REACHES_AGENTS = [
 # broken and nothing said so.
 WORLD_TEMPLATE_REACHES_AGENTS = [
     "doctrine/identity_axiom.md", "doctrine/identity_flux.md",
-    "doctrine/identity_vertex.md", "doctrine/manifesto.md",
+    "doctrine/identity_agent.md", "doctrine/manifesto.md",
     "doctrine/constitution.md", "doctrine/doctrine.md",
 ]
 

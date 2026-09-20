@@ -101,6 +101,12 @@ class AgentContext:
         return "\n".join(lines)
 
 
+#: Substituted into the generic agent template. Kept small and explicit: the
+#: template is rendered for framing/identity_seed at materialise time, and only
+#: these per-agent values are filled in here, per cycle.
+GENERIC_AGENT_PROMPT = "agent_system.md"
+
+
 def load_system_prompt(prompts_dir: Path, prompt_filename: str) -> str:
     """Load a system prompt from the prompts directory."""
     filepath = prompts_dir / prompt_filename
@@ -109,20 +115,55 @@ def load_system_prompt(prompts_dir: Path, prompt_filename: str) -> str:
     return filepath.read_text(encoding="utf-8")
 
 
+def load_agent_system_prompt(prompts_dir: Path, agent_id: str, config) -> str:
+    """This agent's system prompt: its own file, or the generic template.
+
+    A hand-written `<agent_id>_system.md` still wins, so axiom and flux are
+    untouched. Anything else falls back to `agent_system.md` with the roster
+    substituted in.
+
+    The fallback exists because the alternative was done once by hand and
+    produced vertex_system.md: a search-and-replace of axiom_system.md reading
+    "You work with partners named Axiom and your partners", describing Vertex
+    with Flux's role, paired with an identity statement calling Vertex "the
+    architect and stabilizer" — Axiom's role — who remembers "my interactions
+    with Flux" and not Axiom. Every three-agent result in the project was
+    collected against that.
+    """
+    specific = prompts_dir / f"{agent_id}_system.md"
+    if specific.exists():
+        return specific.read_text(encoding="utf-8")
+
+    template = load_system_prompt(prompts_dir, GENERIC_AGENT_PROMPT)
+    return fill_roster(template, agent_id, config)
+
+
+def fill_roster(template: str, agent_id: str, config) -> str:
+    """Substitute the roster-dependent fields of a generic template."""
+    return (template
+            .replace("{display_name}", config.display_name(agent_id))
+            .replace("{partner_names}", config.partner_names(agent_id) or "no one yet")
+            .replace("{disposition}", config.disposition(agent_id))
+            .replace("{agent_id}", agent_id))
+
+
 def build_agent_context(
     agent_id: str,
     prompts_dir: Path,
     identity: IdentityStatement,
     memory: list[MemoryEntry],
     doctrine_texts: dict[str, str],
+    config=None,
 ) -> AgentContext:
     """Build a full agent context from persistent state.
 
     Called at the start of each cycle to reconstruct the agent's
     view of the world.
     """
-    prompt_file = f"{agent_id}_system.md"
-    system_prompt = load_system_prompt(prompts_dir, prompt_file)
+    if config is not None:
+        system_prompt = load_agent_system_prompt(prompts_dir, agent_id, config)
+    else:
+        system_prompt = load_system_prompt(prompts_dir, f"{agent_id}_system.md")
 
     # Build doctrine context from all doctrine documents
     doctrine_parts = []
