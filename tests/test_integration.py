@@ -1214,3 +1214,58 @@ class TestPromptsReceiveWhatTheyClaim:
         text = cycle.evaluation_feedback()
         assert "RIGOUR_NOTE" in text
         assert "CLARITY_NOTE" not in text
+
+
+class TestTheScoreIsReconciledWithItsParts:
+    """total_score is the primary dependent variable and the model gets it wrong.
+
+    The evaluator reports a total alongside per-dimension scores, and in
+    SHAKE_002 the two disagreed in 11 of 24 cycles — 46%. evaluation.py
+    substitutes the dimension sum and logs a NOTABLE_EVENT, which is right, and
+    had no test: grep for evaluation_total_mismatch across tests/ returned
+    nothing. A silent regression here corrupts the headline metric in both
+    analysis scripts and nothing downstream would notice.
+    """
+
+    def _run(self, tmp_path, total_hint):
+        config = make_config(tmp_path, total_cycles=1)
+        prepared = prepare_run(config, load_embeddings=False)
+        hints = {"revised_content": MOCK_REVISED_DOCTRINE}
+        if total_hint is not None:
+            hints["total_score"] = total_hint
+        prepared.backend.field_hints.update(hints)
+        orch = CycleOrchestrator(
+            config=prepared.config, backend=prepared.backend, world=prepared.world,
+            log=prepared.log, scenario_library=prepared.scenario_library,
+            kb_manager=prepared.kb_manager,
+        )
+        asyncio.run(orch.run_all_cycles(start_cycle=0))
+        return config, read_events(config)
+
+    def test_a_disagreeing_total_is_replaced_by_the_sum(self, tmp_path):
+        _, events = self._run(tmp_path, total_hint=3)
+        scores = of_type(events, "EVALUATION_SCORE")
+        assert scores
+        payload = scores[0]["payload"]
+        assert payload["total_score"] == sum(payload["scores"].values()), (
+            "the reported total survived into the record instead of the sum"
+        )
+
+    def test_the_substitution_is_recorded_not_silent(self, tmp_path):
+        """Analysis has to be able to tell which scores were repaired."""
+        _, events = self._run(tmp_path, total_hint=3)
+        mismatches = [e for e in events
+                      if e["payload"].get("kind") == "evaluation_total_mismatch"]
+        assert mismatches, "the primary metric was rewritten with no event"
+        p = mismatches[0]["payload"]
+        assert p["reported_total"] == 3
+        assert p["dimension_sum"] == sum(p["scores"].values())
+
+    def test_the_recorded_total_always_equals_its_parts(self, tmp_path):
+        """Whatever the model reported, the stored metric is internally
+        consistent — which is the property downstream analysis relies on."""
+        _, events = self._run(tmp_path, total_hint=None)
+        scores = of_type(events, "EVALUATION_SCORE")
+        assert scores
+        p = scores[0]["payload"]
+        assert p["total_score"] == sum(p["scores"].values())
