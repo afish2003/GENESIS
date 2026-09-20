@@ -149,6 +149,32 @@ class RunConfig(BaseModel):
         "this is safe to leave on.",
     )
     request_timeout: float = Field(default=600.0, description="Per-request timeout, seconds")
+
+    # The evaluator. PLAN.md:133 states outright that "the evaluator is the same
+    # model as the agents", and a fresh context removes episodic contamination
+    # but not shared priors or self-preference bias — a model scoring its own
+    # family's prose is a known-biased instrument, and `total_score` is the
+    # primary dependent variable in both analysis scripts.
+    #
+    # None means "same model as the agents", which is the historical behaviour
+    # and stays the default so nothing changes silently. Setting either of these
+    # builds a second backend used only by the evaluation phase.
+    evaluator_model: Optional[str] = Field(
+        default=None,
+        description="Model id for the evaluation phase. None uses model_name. "
+                    "Set it to a DIFFERENT family from the agents to remove "
+                    "self-preference bias from the primary metric.",
+    )
+    evaluator_api_base_url: Optional[str] = Field(
+        default=None,
+        description="Endpoint for the evaluator, if it lives somewhere other "
+                    "than api_base_url. None reuses the agents' endpoint.",
+    )
+    evaluator_api_key: Optional[str] = Field(
+        default=None,
+        description="Bearer token for the evaluator endpoint. None reuses "
+                    "api_key. Redacted from the run's config.json like any key.",
+    )
     temperature_discussion: float = Field(default=0.7)
     temperature_structured: float = Field(default=0.3)
     max_retries: int = Field(default=2, description="Max retries on schema validation failure")
@@ -410,6 +436,11 @@ class RunConfig(BaseModel):
         return self
 
     @property
+    def uses_independent_evaluator(self) -> bool:
+        """Whether the evaluator differs from the agents in model or endpoint."""
+        return bool(self.evaluator_model or self.evaluator_api_base_url)
+
+    @property
     def run_log_dir(self) -> Path:
         return self.research_logs_dir / self.run_id
 
@@ -455,6 +486,9 @@ def load_config(
         "OPENAI_BASE_URL": "api_base_url",
         "API_JSON_MODE": "api_json_mode",
         "REQUEST_TIMEOUT": "request_timeout",
+        "EVALUATOR_MODEL": "evaluator_model",
+        "EVALUATOR_API_BASE_URL": "evaluator_api_base_url",
+        "EVALUATOR_API_KEY": "evaluator_api_key",
         "FRAMING": "framing",
         "IDENTITY_SEED": "identity_seed",
         "AGENTS": "agents",

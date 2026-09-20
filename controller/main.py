@@ -129,6 +129,7 @@ async def run(argv: list[str] | None = None) -> None:
         scenario_library=prepared.scenario_library,
         kb_manager=prepared.kb_manager,
         sandbox=prepared.sandbox,
+        evaluator_backend=prepared.evaluator_backend,
     )
 
     try:
@@ -139,6 +140,8 @@ async def run(argv: list[str] | None = None) -> None:
     finally:
         await prepared.backend.close()
         await prepared.sandbox.close()
+        if prepared.evaluator_backend is not None:
+            await prepared.evaluator_backend.close()
 
 
 def main(argv: list[str] | None = None) -> None:

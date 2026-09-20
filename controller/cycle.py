@@ -70,7 +70,20 @@ class CycleState:
     #: same way kb_manager is, so the execution phase keeps the standard phase
     #: signature and a test can substitute a fake.
     sandbox: Optional["ExecutionSandbox"] = field(default=None)
+    #: A judge that is not the agents, when one is configured. None means the
+    #: evaluation phase uses the agents' own backend — the historical behaviour,
+    #: and a same-family judge scoring its own prose.
+    evaluator_backend: Optional[InferenceBackend] = field(default=None)
     proposed_protocol: Optional[dict] = None
+    #: The artifact text this cycle's proposal REPLACES, captured by Task.apply
+    #: before it overwrites. The evaluator's `evolution_quality` dimension asks
+    #: whether a revision improves on the prior version, and had no way to see
+    #: it: apply() runs in protocol_design, before evaluation, so by the time
+    #: the judge looked the prior text was already gone. Its prompt has a
+    #: fallback — "If you do not have the prior version, score standalone" —
+    #: which therefore fired on 100% of evaluations ever performed. 10 of 50
+    #: points measuring something other than their name.
+    previous_artifact_content: Optional[str] = None
     evaluation_result: Optional[dict] = None
     #: Set by the execution phase; read by the task's evaluation prompt. None
     #: means the code was not run, which the evaluator is told explicitly.
@@ -97,6 +110,7 @@ class CycleOrchestrator:
         scenario_library: Optional[dict[int, ScenarioEvent]] = None,
         kb_manager: Optional[KnowledgeBaseManager] = None,
         sandbox: Optional[ExecutionSandbox] = None,
+        evaluator_backend: Optional[InferenceBackend] = None,
     ) -> None:
         self.config = config
         self.backend = backend
@@ -105,6 +119,7 @@ class CycleOrchestrator:
         self.scenario_library = scenario_library or {}
         self.kb_manager = kb_manager
         self.sandbox = sandbox
+        self.evaluator_backend = evaluator_backend
         # Deterministic monitoring. Observes controller-side state only and
         # never contributes to AgentContext, so the agents cannot perceive it.
         self.watchdog = Watchdog(config) if config.watchdog_enabled else None
@@ -134,6 +149,10 @@ class CycleOrchestrator:
             "model": self.config.model_name,
             "execution_enabled": self.config.execution_enabled,
             "sandbox_backend": self.config.sandbox_backend.value,
+            # Recorded per run because it decides how much the primary metric
+            # can be trusted.
+            "evaluator_model": self.config.evaluator_model or self.config.model_name,
+            "independent_evaluator": self.config.uses_independent_evaluator,
         })
 
         await self._check_sandbox()
@@ -246,6 +265,7 @@ class CycleOrchestrator:
             scenario_library=self.scenario_library,
             kb_manager=self.kb_manager,
             sandbox=self.sandbox,
+            evaluator_backend=self.evaluator_backend,
             previous_execution=self._last_execution,
         )
 

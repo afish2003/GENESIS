@@ -50,8 +50,34 @@ EVALUATION_PROMPT = """Evaluate the following protocol document.
 **Action**: {action}
 
 {content}
-
+{prior_version}
 Score this document on the five dimensions (coherence, completeness, doctrine_alignment, precision, evolution_quality), each 0-10. Provide justifications, a total score, and an overall assessment."""
+
+
+#: The version being replaced, shown only when there is one. `evolution_quality`
+#: asks whether a revision improves on the prior version and could never see it,
+#: so its "if you do not have the prior version" fallback fired every time.
+PRIOR_VERSION_SECTION = """
+## The version this replaces
+
+```
+{previous}
+```
+
+Compare the two directly when scoring evolution_quality: what did the revision
+add, remove, or reword, and is the document better for it? A change that is
+merely longer, or that restates what was already there, is not an improvement.
+"""
+
+
+def prior_version_section(cycle, limit: int = 4000) -> str:
+    """The replaced text, or empty for a genuinely new artifact."""
+    previous = getattr(cycle, "previous_artifact_content", None) if cycle else None
+    if not (previous or "").strip():
+        return ""
+    if len(previous) > limit:
+        previous = previous[:limit] + "\n...[truncated for the evaluator]"
+    return PRIOR_VERSION_SECTION.format(previous=previous)
 
 
 class ProtocolTask(Task):
@@ -112,6 +138,9 @@ class ProtocolTask(Task):
                 last_modified_cycle=cycle.cycle_id,
             )
         else:
+            # Capture before overwriting — this is the only moment the prior
+            # text exists alongside the new one.
+            cycle.previous_artifact_content = existing.content
             existing.content = output.content
             existing.title = output.title
             existing.version += 1
@@ -132,4 +161,5 @@ class ProtocolTask(Task):
             version=proto.version if proto else 1,
             action=proposal.get("action", ""),
             content=proposal.get("content", ""),
+            prior_version=prior_version_section(cycle),
         )

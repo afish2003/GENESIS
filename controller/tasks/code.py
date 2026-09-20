@@ -26,6 +26,7 @@ from pydantic import BaseModel
 from controller.phases.schemas import CodeArtifactOutput
 from controller.sandbox.schemas import ExecutionRequest
 from controller.tasks.base import Task
+from controller.tasks.protocol import prior_version_section
 from controller.world.artifacts import ProtocolDocument
 from controller.world.paths import safe_artifact_id
 
@@ -101,7 +102,7 @@ EVALUATION_PROMPT = """Evaluate the following code module. {preamble}
 ```{language}
 {content}
 ```
-
+{prior_version}
 ## Tests
 
 ```
@@ -271,6 +272,7 @@ class CodeTask(Task):
             )
         else:
             proto = world.protocols[aid]
+            cycle.previous_artifact_content = proto.content
             proto.content = body
             proto.title = output.title
             proto.version += 1
@@ -295,6 +297,7 @@ class CodeTask(Task):
             action=proposal.get("action", ""),
             content=proposal.get("content", ""),
             tests=proposal.get("tests", "(none supplied)"),
+            prior_version=prior_version_section(cycle),
         )
 
     @staticmethod

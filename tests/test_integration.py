@@ -877,3 +877,76 @@ class TestDevilsAdvocateReachesTheVote:
         assert not any("strongest honest case AGAINST" in t for t in seen)
         # And the vote still happens.
         assert any("Do you approve or reject" in t for t in seen)
+
+
+class TestIndependentEvaluator:
+    """The judge can be a model that is not the agents.
+
+    PLAN.md:133 states the design outright — "The evaluator is the same model as
+    the agents (Qwen2.5:32b)" — and a fresh context removes episodic
+    contamination but not self-preference bias. total_score is the primary
+    dependent variable in both analysis scripts, so a same-family judge is the
+    single most damaging thing about the measurement.
+    """
+
+    def test_same_model_by_default(self, tmp_path):
+        """The historical behaviour must not change silently."""
+        config = make_config(tmp_path, total_cycles=1)
+        assert config.uses_independent_evaluator is False
+        prepared = prepare_run(config, load_embeddings=False)
+        assert prepared.evaluator_backend is None
+
+    def test_a_configured_judge_is_built(self, tmp_path):
+        config = make_config(tmp_path, total_cycles=1,
+                             evaluator_model="some-other-model")
+        assert config.uses_independent_evaluator is True
+        prepared = prepare_run(config, load_embeddings=False)
+        assert prepared.evaluator_backend is not None
+
+    def test_the_judge_actually_scores(self, tmp_path):
+        """Not "a second backend was constructed" — that it did the scoring."""
+        config = make_config(tmp_path, total_cycles=1,
+                             evaluator_model="judge-model")
+        prepared = prepare_run(config, load_embeddings=False)
+        prepared.backend.field_hints.update(
+            {"revised_content": MOCK_REVISED_DOCTRINE})
+
+        judged: list[str] = []
+        original = prepared.evaluator_backend.complete_structured
+
+        async def recording(*a, **kw):
+            judged.append("called")
+            return await original(*a, **kw)
+
+        prepared.evaluator_backend.complete_structured = recording  # type: ignore
+        orch = CycleOrchestrator(
+            config=prepared.config, backend=prepared.backend, world=prepared.world,
+            log=prepared.log, scenario_library=prepared.scenario_library,
+            kb_manager=prepared.kb_manager,
+            evaluator_backend=prepared.evaluator_backend,
+        )
+        asyncio.run(orch.run_all_cycles(start_cycle=0))
+        assert judged, "the independent judge was built but never used"
+
+    def test_every_score_records_which_model_produced_it(self, tmp_path):
+        """A mixed corpus of runs cannot be separated after the fact otherwise."""
+        config = make_config(tmp_path, total_cycles=1,
+                             evaluator_model="judge-model")
+        _, events = run_cycles(config)
+        scores = of_type(events, "EVALUATION_SCORE")
+        assert scores
+        assert scores[0]["payload"]["evaluator_model"] == "judge-model"
+        assert scores[0]["payload"]["independent_evaluator"] is True
+
+    def test_a_same_family_run_says_so_in_its_own_record(self, tmp_path):
+        """The default is the biased configuration, so it must be legible in the
+        run rather than inferred from a null field."""
+        config = make_config(tmp_path, total_cycles=1)
+        _, events = run_cycles(config)
+        start = of_type(events, "RUN_START")[0]["payload"]
+        assert start["independent_evaluator"] is False
+        assert start["evaluator_model"] == config.model_name
+
+    def test_the_evaluator_key_is_redacted(self, tmp_path):
+        config = make_config(tmp_path, evaluator_api_key="sk-judge-secret")
+        assert "sk-judge-secret" not in json.dumps(redact_config(config))

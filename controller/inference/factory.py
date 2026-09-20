@@ -50,6 +50,40 @@ def create_backend(config: RunConfig) -> InferenceBackend:
     raise ValueError(f"Unknown inference backend: {kind}")
 
 
+def create_evaluator_backend(config: RunConfig) -> InferenceBackend | None:
+    """A separate backend for the evaluation phase, or None to reuse the agents'.
+
+    Returning None rather than a copy is deliberate: the caller then passes the
+    agents' own backend, and `config.json` records evaluator_model as null, so
+    "the judge was the same model" stays visible in the run record instead of
+    being hidden behind a duplicated object.
+    """
+    if not config.uses_independent_evaluator:
+        return None
+
+    model = config.evaluator_model or config.model_name
+    base_url = config.evaluator_api_base_url or config.api_base_url
+
+    if config.inference_backend == Backend.MOCK:
+        from controller.inference.mock_backend import MockBackend
+
+        return MockBackend(model=model)
+
+    from controller.inference.openai_backend import OpenAICompatBackend
+
+    logger.info(
+        "Evaluation: independent judge %s @ %s — the agents are scored by a "
+        "model that is not themselves", model, base_url,
+    )
+    return OpenAICompatBackend(
+        base_url=base_url,
+        model=model,
+        api_key=config.evaluator_api_key or config.api_key,
+        timeout=config.request_timeout,
+        json_mode=config.api_json_mode,
+    )
+
+
 def describe_backend(config: RunConfig) -> str:
     """One-line human-readable summary for the startup banner. Never logs the key."""
     kind = config.inference_backend

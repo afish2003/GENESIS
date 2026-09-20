@@ -20,7 +20,7 @@ from typing import Optional
 
 from controller.config import RunConfig
 from controller.inference.backend import InferenceBackend
-from controller.inference.factory import create_backend
+from controller.inference.factory import create_backend, create_evaluator_backend
 from controller.logging.logger import AppendOnlyJSONLLogger
 from controller.prompts import materialise_prompts, materialise_world_template
 from controller.retrieval.databases import KnowledgeBaseManager
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 #: Keys redacted from the config written into a run's log directory. Run
 #: directories are what researchers archive and share; a live bearer token has
 #: no business in one.
-_SECRET_FIELDS = ("api_key",)
+_SECRET_FIELDS = ("api_key", "evaluator_api_key")
 
 
 def _provide(override: Optional[Path], dest: Path, render) -> Path:
@@ -94,6 +94,7 @@ class PreparedRun:
     scenario_library: dict
     kb_manager: KnowledgeBaseManager
     sandbox: ExecutionSandbox
+    evaluator_backend: Optional[InferenceBackend]
     start_cycle: int
 
 
@@ -172,6 +173,7 @@ def prepare_run(
         scenario_library=load_scenario_library(config),
         kb_manager=kb_manager,
         sandbox=sandbox,
+        evaluator_backend=create_evaluator_backend(config),
         start_cycle=start_cycle,
     )
 

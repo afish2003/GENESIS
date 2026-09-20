@@ -64,7 +64,13 @@ async def execute(
         Message(role="user", content=prompt),
     ]
 
-    output = await backend.complete_structured(
+    # An independent judge when one is configured, otherwise the agents' own
+    # backend. PLAN.md:133 fixes the latter as the design — "the evaluator is
+    # the same model as the agents" — and a fresh context removes episodic
+    # contamination but not self-preference bias, which matters because
+    # total_score is the primary dependent variable in both analysis scripts.
+    judge = cycle.evaluator_backend or backend
+    output = await judge.complete_structured(
         messages=messages,
         response_schema=task.evaluation_schema(),
         temperature=config.temperature_structured,
@@ -123,7 +129,15 @@ async def execute(
         run_id=config.run_id,
         condition=config.condition.value,
         cycle_id=cycle.cycle_id,
-        payload={"task": task.name, "max_score": task.max_score, **output.model_dump()},
+        payload={
+            "task": task.name,
+            "max_score": task.max_score,
+            # Which model produced the score, on every score. Without it a
+            # mixed corpus of runs cannot be separated after the fact.
+            "evaluator_model": config.evaluator_model or config.model_name,
+            "independent_evaluator": config.uses_independent_evaluator,
+            **output.model_dump(),
+        },
     ))
 
     return events
