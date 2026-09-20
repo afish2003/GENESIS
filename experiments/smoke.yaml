@@ -27,7 +27,7 @@
 
 inference_backend: openai
 api_base_url: http://localhost:11434/v1
-model_name: qwen2.5:0.5b-instruct
+model_name: qwen2.5:7b-instruct
 
 # Trimmed hard. Discussion is roughly a third of all inference in a cycle, and
 # a smoke run does not need eight turns to prove the phase works.

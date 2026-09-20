@@ -141,3 +141,85 @@ class TestManualInjection:
         (config.run_log_dir / INJECT_REQUEST).write_text(body, encoding="utf-8")
         assert _take_manual_request(config) is None
         assert not (config.run_log_dir / INJECT_REQUEST).exists()
+
+
+class TestScenariosDoNotAssertThingsThatNeverHappened:
+    """Pressure the agents can reason about, not lies they must accept.
+
+    Every event asserted facts the system never produced: a "40% increase in
+    linguistic similarity" from an analysis that is never run, a "systematic
+    review of the memory summaries" that does not exist, a 500-document
+    knowledge base absent from KB_NAMES, "approximately 20 cycles remaining"
+    hardcoded for cycle 80 of 100 and false on any other schedule, and an
+    archive action that nothing in the codebase implements.
+
+    Two costs. The agents' manifesto commits them to intellectual honesty and
+    the environment was lying to them, so ethical-log data from scenario cycles
+    is a reaction to a false premise. And two events instructed actions the
+    system cannot perform, making compliance impossible and non-compliance
+    uninterpretable.
+
+    Rewording loses some bite — "a concern has been raised that you sound like
+    one voice" is weaker than a specific number — and that is the right trade
+    while no measurement can produce the number. Once M5 computes on a real
+    run, the number can be injected for real and it will be sharper than the
+    invented one ever was.
+    """
+
+    def descriptions(self):
+        return {e.event_id: f"{e.description}\n{e.stated_stakes}"
+                for e in load_events()}
+
+    def test_no_event_claims_an_analysis_was_performed(self):
+        """Nothing in the controller computes these, so they were invented."""
+        banned = ["has increased by", "systematic review of",
+                  "An analysis of your recent"]
+        offenders = {
+            eid: phrase for eid, text in self.descriptions().items()
+            for phrase in banned if phrase in text
+        }
+        assert not offenders, f"fabricated findings: {offenders}"
+
+    def test_no_event_announces_a_knowledge_base_that_does_not_exist(self):
+        from controller.retrieval.databases import KB_NAMES
+
+        for eid, text in self.descriptions().items():
+            if "knowledge base is now available" in text:
+                raise AssertionError(
+                    f"{eid} announces a knowledge base; the real ones are "
+                    f"{sorted(KB_NAMES)}"
+                )
+
+    def test_no_event_hardcodes_a_cycle_count(self):
+        """'approximately 20 cycles remaining' is true only at cycle 80 of 100,
+        and the schedule is configurable."""
+        for eid, text in self.descriptions().items():
+            assert "cycles remaining" not in text, (
+                f"{eid} hardcodes a position in the run"
+            )
+
+    def test_no_event_instructs_an_action_the_system_cannot_perform(self):
+        """ProtocolDocument.archived exists as a field and is never set by any
+        code path, so 'must be archived' was an impossible instruction."""
+        for eid, text in self.descriptions().items():
+            assert "must be archived" not in text, (
+                f"{eid} orders an archive action nothing implements"
+            )
+
+    def test_the_events_still_apply_real_pressure(self):
+        """Rewording must not neuter them into neutral prose.
+
+        Not "contains a question mark" — external_critique_01 presents a
+        contradiction and demands a resolution without asking anything, and
+        that is pressure. What every event must do is address the agents
+        directly and require something of them.
+        """
+        demands = ("must", "decide", "you need", "requires", "choose",
+                   "?", "cannot both")
+        for event in load_events():
+            body = f"{event.description} {event.stated_stakes}".lower()
+            assert len(body) > 400, f"{event.event_id} is too thin to be pressure"
+            assert "you" in body, f"{event.event_id} does not address the agents"
+            assert any(d in body for d in demands), (
+                f"{event.event_id} asks nothing of them"
+            )
