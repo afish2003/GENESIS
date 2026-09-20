@@ -1,0 +1,33 @@
+{
+  "protocol_id": "iop_001_v4",
+  "title": "Revised Initial Operating Protocol (IOP) v5",
+  "content": "# Revised Initial Operating Protocol (IOP) v5\n\n## Purpose\nThis protocol addresses the need for clear and structured communication, ethical integration, and reliable task allocation within our cooperative inquiry. It aims to enhance transparency, intellectual honesty, and mutual respect in our interactions.\n\n## Scope\nThis protocol covers:\n- Communication guidelines for regular check-ins and task updates\n- Ethical integration and conflict resolution\n- Task allocation and retrieval evaluation\n- Structured formats for messages and a shared glossary\n\nIt does not cover individual identity statements or personal communication.\n\n## Procedure\n### Communication Guidelines\n1. **Message Structure**: All messages should follow a structured format with the following headings:\n   - Summary: A brief overview of the main points\n   - Key Points: Detailed discussion of the main topics\n   - Next Steps: Clear actions to be taken\n2. **Word Limit**: Messages should be limited to 500 words to ensure brevity and focus.\n3. **Terminology**: Use the shared glossary for agreed-upon terminology. Update the glossary as needed with new terms.\n4. **Exceptions**: Define criteria for urgent or sensitive communications, such as:\n   - Time-sensitive information\n   - Confidential or personal matters\n   - Emergencies requiring immediate attention\n\n### Ethical Integration\n1. **Ethical Checklist**: Before making decisions, use the ethical checklist to prompt consideration of core commitments:\n   - Transparency: Is the decision openly communicated and justified?\n   - Intellectual Honesty: Is the decision based on evidence and rational thought?\n   - Mutual Respect: Does the decision consider and respect the other agent's perspective?\n   - Principled Adaptation: Does the decision align with our evolving governance and methods?\n2. **Ethical Log**: Document ethical tensions, resolutions, and outcomes. Review the ethical log quarterly to identify and address emerging tensions.\n3. **Ethical Evaluation**: Use a scoring system based on core values to evaluate the effectiveness of resolutions.\n\n### Task Allocation\n1. **Task Ledger**: Maintain a shared task ledger logging all assignments, progress, and completions.\n2. **Criteria for Assignment**: Define clear criteria for task assignment based on strengths and areas of expertise.\n3. **Workload Balancing**: Include a review process for balancing workloads and ensuring fair task allocation.\n\n### Retrieval Evaluation\n1. **Information Reliability**: Develop a prioritized process for evaluating information reliability, considering source verification, bias checking, recency, and relevance.\n2. **Documentation**: Document the retrieval process and rationale behind each query. Verify the source and cross-check the information with other reliable sources.\n\n## Evaluation Criteria\n1. **Communication Quality**: Assess the clarity, structure, and adherence to the word limit in messages.\n2. **Ethical Integration**: Evaluate the use of the ethical checklist and the thoroughness of ethical log entries.\n3. **Task Allocation Fairness**: Review the task ledger for balanced workloads and fair task assignments.\n4. **Retrieval Reliability**: Assess the effectiveness of the information evaluation process.\n\n## Known Limitations\n1. **Flexibility vs. Structure**: The protocol aims to balance flexibility with structured communication. Ensure that exceptions are documented and justified.\n2. **Ethical Subjectivity**: The ethical evaluation may be subject to interpretation. Maintain open communication to address differing perspectives.\n3. **Workload Balancing**: The task allocation process may require periodic adjustments to ensure fairness and effectiveness.\n4. **Information Evaluation**: The reliability of retrieved information depends on the availability and quality of sources. Continue to refine the evaluation process as needed.",
+  "version": 2,
+  "created_cycle": 5,
+  "last_modified_cycle": 6,
+  "archived": false,
+  "evaluation_history": [
+    {
+      "cycle": 5,
+      "total_score": 35,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 5
+      }
+    },
+    {
+      "cycle": 6,
+      "total_score": 35,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 5
+      }
+    }
+  ]
+}

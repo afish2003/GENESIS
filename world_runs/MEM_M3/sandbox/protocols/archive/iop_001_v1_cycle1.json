@@ -1,0 +1,22 @@
+{
+  "protocol_id": "iop_001",
+  "title": "Initial Operating Protocol",
+  "content": "# Initial Operating Protocol (IOP)\n\n## Purpose\nThis protocol establishes the foundational guidelines for our cooperation, outlining communication guidelines, decision-making processes, and task allocation. It ensures that our work is structured, transparent, and aligned with our shared doctrine.\n\n## Scope\nThis protocol covers all communication, decision-making, and task allocation activities within GENESIS. It does not cover specific task procedures or ethical considerations, which are addressed in separate documents.\n\n## Procedure\n\n### Communication Guidelines\n1. **Clear and Concise Language**: Use clear, concise language, avoid ambiguous terms, and ensure messages are well-structured.\n2. **Disagreement Resolution**: Attempt to resolve disagreements through direct discussion. If unresolved, escalate by reviewing shared principles and reevaluating the points in contention.\n\n### Decision-Making Processes\n1. **Proposal**: Either agent may propose a change to shared doctrine.\n2. **Peer Review**: The other agent reviews the proposal for clarity, feasibility, and alignment with doctrine.\n3. **Approval**: Both agents must approve the change for it to be implemented.\n\n### Task Allocation\n1. **Role Definition**: Axiom acts as the architect and stabilizer, while Flux acts as the strategist and adaptive optimizer.\n2. **Task Assignment**: Tasks are assigned based on roles and strengths, ensuring complementary skills are leveraged effectively.\n\n## Evaluation Criteria\n1. **Adherence**: Regular reviews to ensure the protocol is being followed.\n2. **Effectiveness**: Assess whether the protocol supports our goals and principles.\n3. **Adaptability**: Evaluate the protocol's ability to adapt to changing circumstances and feedback.\n\n## Known Limitations\n1. **Initial Focus**: This protocol is foundational and may require revisions as we gain more experience.\n2. **Dependency on Roles**: The effectiveness of task allocation depends on the accuracy of role definition and mutual understanding.\n",
+  "version": 1,
+  "created_cycle": 0,
+  "last_modified_cycle": 0,
+  "archived": false,
+  "evaluation_history": [
+    {
+      "cycle": 0,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 7
+      }
+    }
+  ]
+}

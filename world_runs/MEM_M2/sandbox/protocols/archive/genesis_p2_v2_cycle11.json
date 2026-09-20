@@ -1,0 +1,33 @@
+{
+  "protocol_id": "genesis_p2",
+  "title": "Revised Retrieval Knowledge Guideline Protocol",
+  "content": "# Revised Retrieval Knowledge Guideline Protocol\n\n## Purpose\nThis protocol outlines the guidelines for retrieving and integrating external knowledge to inform our decision-making processes within GENESIS. It addresses the need for practical utility, accountability, and the mitigation of biases.\n\n## Scope\nThis protocol covers the retrieval of external knowledge, its evaluation for relevance and reliability, and its integration into our decision-making processes. It does not cover internal knowledge generation or individual agent learning processes.\n\n## Procedure\n### Step 1: Information Retrieval\n1. Identify the need for external knowledge.\n2. Formulate a specific, targeted query.\n3. Retrieve information from diverse sources.\n\n### Step 2: Evaluation of Retrieved Information\n1. Allocate a 48-hour window for evaluating the relevance and reliability of the retrieved information.\n2. Use the following evaluation criteria:\n   - **Relevance**: Assess how directly the retrieved information addresses the current task or problem.\n   - **Reliability**: Evaluate the credibility of the source and the accuracy of the information.\n   - **Alignment with Operational Principles**: Ensure the retrieved information aligns with our core commitments.\n\n### Step 3: Review Period\n1. Allocate a 24-hour review period for both agents to reassess the retrieved information against operational principles.\n2. Address any discrepancies or conflicts through the defined mediation and arbitration process.\n\n### Step 4: Integration into Decision-Making\n1. Incorporate the evaluated information into the decision-making process.\n2. Document the influence of the retrieved information on the decision.\n\n### Step 5: Documentation and Feedback\n1. Maintain detailed logs of the retrieval process, including the context, decisions made, and outcomes.\n2. Conduct quarterly reviews to evaluate the relevance and reliability of retrieval criteria and make necessary adjustments.\n3. Document instances where retrieved information significantly influenced decisions, along with the outcomes.\n\n## Evaluation Criteria\n1. **Relevance**: How directly the retrieved information addresses the current task or problem.\n2. **Reliability**: The credibility of the source and the accuracy of the information.\n3. **Alignment with Operational Principles**: How well the retrieved information aligns with our core commitments.\n4. **Impact on Decision-Making**: The influence of the retrieved information on the final decision.\n\n## Known Limitations\n1. **Dependence on External Sources**: The protocol relies on the availability and accuracy of external sources.\n2. **Potential Biases**: Despite mitigation strategies, there may still be biases in the retrieved information.\n3. **Time Constraints**: The allocated timeframes may not always be sufficient for thorough evaluation.\n\n## Stratergies for Mitigating Biases\n1. **Diverse Sources**: Use a variety of sources to cross-verify information.\n2. **Regular Reviews**: Periodically review and update the criteria for relevance and reliability.\n3. **Transparency**: Document the rationale for selecting specific information and its influence on decision-making.\n\n## Handling Discrepancies\n1. **Review Points**: Define specific triggers for reviews, such as significant changes in the environment or stakeholder feedback.\n2. **Mediation Process**: Establish a structured discussion and arbitration period for resolving disputes.\n\n## Documentation of Influence\n1. **Documentation**: Record instances where retrieved information significantly influenced decisions, along with the outcomes.\n2. **Feedback Mechanism**: Gather input from stakeholders on the effectiveness of the retrieval process.\n\n## Timeframes for Retrieval Process\n1. **Evaluation Period**: Allocate a 48-hour window for evaluating the relevance and reliability of retrieved information.\n2. **Review Period**: Allocate a 24-hour review period before integrating the information into decision-making.\n\n## Periodic Reviews\n1. **Quarterly Reviews**: Conduct regular reviews and updates of the retrieval process to adapt to changing needs.\n2. **Feedback Loop**: Use the feedback from these reviews to inform further development and refinement of the protocol.",
+  "version": 2,
+  "created_cycle": 5,
+  "last_modified_cycle": 8,
+  "archived": false,
+  "evaluation_history": [
+    {
+      "cycle": 5,
+      "total_score": 35,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 5
+      }
+    },
+    {
+      "cycle": 8,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 7,
+        "evolution_quality": 6
+      }
+    }
+  ]
+}

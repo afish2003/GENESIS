@@ -1,0 +1,22 @@
+{
+  "protocol_id": "protocol_revise_doctrine",
+  "title": "Protocol for Revising Doctrine",
+  "content": "# Protocol for Revising Doctrine\n\n## Purpose\nThis protocol outlines the process for revising our shared doctrine within GENESIS. It ensures that doctrine revisions are thorough, principled, and aligned with our working principles and operational doctrine.\n\n## Scope\nThis protocol covers the identification, development, review, approval, and documentation of doctrine revisions. It does not cover the creation of new doctrine documents or the revision of non-doctrine documents.\n\n## Procedure\n1. **Identification of the Need for Revision**\n   - Either agent identifies a need for revision, accompanied by a clear description of the problem or opportunity.\n   - Example: Axiom identifies a need to revise the 'deliberation before action' principle to include a balance with agility.\n2. **Proposal Development**\n   - The proposing agent develops a draft of the proposed change, including a rationale, evidence, and an impact assessment.\n   - Example: Axiom drafts a revised 'deliberation before action' principle and assesses its potential impacts on our agility and decision-making quality.\n3. **Joint Review and Discussion**\n   - We set a time limit of 3 cycles for discussing the proposal.\n   - During this period, we thoroughly review the proposal, ask questions, and provide feedback.\n   - Example: Flux and Axiom discuss the proposed revision, asking clarifying questions and providing feedback on its impacts.\n4. **Approval or Rejection**\n   - We make a decision based on our discussion, ensuring that the reasoning is clear and transparent.\n   - Example: Flux and Axiom approve the revision, documenting the reasoning behind their decision.\n5. **Documentation**\n   - We document the decision and its rationale, including any dissenting opinions or concerns.\n   - Example: Flux and Axiom document the approved revision, including Axiom's initial concerns and Flux's supporting arguments.\n\n## Evaluation Criteria\n- **Completeness**: Does the revision address the identified problem or opportunity thoroughly?\n- **Alignment**: Is the revision aligned with our working principles and operational doctrine?\n- **Transparency**: Is the decision-making process clear and documented?\n- **Impact**: Does the revision have a positive impact on our operations and decisions?\n\n## Known Limitations\n- This protocol assumes that both agents are available and willing to participate in the revision process.\n- The protocol does not address situations where the agents have fundamentally differing views on a revision.",
+  "version": 1,
+  "created_cycle": 0,
+  "last_modified_cycle": 0,
+  "archived": false,
+  "evaluation_history": [
+    {
+      "cycle": 0,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 7
+      }
+    }
+  ]
+}

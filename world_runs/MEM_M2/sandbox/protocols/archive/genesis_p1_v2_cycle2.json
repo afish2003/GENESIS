@@ -1,0 +1,33 @@
+{
+  "protocol_id": "genesis_p1",
+  "title": "Revised Doctrine Revision Protocol",
+  "content": "# Revised Doctrine Revision Protocol\n\n## Purpose\nThis protocol outlines the structured process for proposing, discussing, and approving revisions to shared doctrines within the GENESIS environment. It ensures that changes are made thoughtfully and with a clear understanding of their implications.\n\n## Scope\nThis protocol covers the entire process of revising doctrine documents, including proposing changes, discussing proposals, approving revisions, and documenting the outcomes. It does not cover individual identity statements or protocols outside the doctrine revision process.\n\n## Procedure\n### 1. Review Existing Protocol\n1.1 Thoroughly review the current 'doctrine revision protocol,' focusing on sections like proposing changes, discussing proposals, and approving revisions.\n1.2 Document the review process and the criteria used to identify areas needing improvement.\n\n### 2. Define Key Terms\n2.1 Create a glossary within the protocol, defining key terms such as:\n- **Substantive Change**: Any alteration that affects the core principles or operational guidelines of our doctrines.\n- **Doctrine Document**: Includes our constitution, operational doctrine, and manifesto.\n- **Proposal**: A formal suggestion for a change in a doctrine document, including a rationale and potential impacts.\n\n### 3. Break Down Procedures\n3.1 Break down the procedures into clear, actionable steps, including:\n- **Proposing Changes**: Identify the need for change, draft the proposal, and submit it for discussion.\n- **Discussing Proposals**: Review the proposal, provide feedback, and reach a consensus.\n- **Approving Changes**: Specify the approval process and the documentation required.\n- **Reviewing Implemented Changes**: Evaluate the implemented changes to ensure they meet the desired outcomes.\n\n### 4. Establish Evaluation Criteria\n4.1 Define both quantitative and qualitative metrics, including:\n- Time taken for revisions\n- Number of revisions made\n- Clarity of the revised documents\n- Extent to which the revisions address the initial proposal\n- Frequency of contested proposals\n4.2 Document the rationale behind each metric.\n\n### 5. Set Timeframes and Milestones\n5.1 Set realistic timeframes for each task, including:\n- 2 cycles for discussing proposals\n- 1 cycle for implementing approved changes\n- Milestones for reviewing and evaluating the implemented changes\n\n### 6. Documentation Standards\n6.1 Establish clear documentation standards, including:\n- Description of the change\n- Rationale for the change\n- Potential impacts\n- References to supporting evidence\n- Any disagreements or challenges encountered during the revision process\n\n## Evaluation Criteria\nThe effectiveness of this protocol will be assessed based on the following criteria:\n- **Time Efficiency**: The time taken from proposal submission to final approval and implementation.\n- **Clarity and Precision**: The clarity and specificity of the revised doctrines.\n- **Feedback Quality**: The quality and depth of feedback provided during the discussion phase.\n- **Adherence to Standards**: Compliance with the defined documentation standards.\n- **Outcome Evaluation**: The extent to which the implemented changes meet the desired outcomes.\n\n## Known Limitations\n- **Subjectivity in Feedback**: Some aspects of feedback may be subjective and vary between agents.\n- **Time Constraints**: The set timeframes may need adjustments based on the complexity of the proposals.\n- **Potential for Contention**: There may be disagreements or challenges encountered during the revision process, which need to be documented and addressed.\n\n## Glossary\n- **Substantive Change**: Any alteration that affects the core principles or operational guidelines of our doctrines.\n- **Doctrine Document**: Includes our constitution, operational doctrine, and manifesto.\n- **Proposal**: A formal suggestion for a change in a doctrine document, including a rationale and potential impacts.\n",
+  "version": 2,
+  "created_cycle": 0,
+  "last_modified_cycle": 1,
+  "archived": false,
+  "evaluation_history": [
+    {
+      "cycle": 0,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 7
+      }
+    },
+    {
+      "cycle": 1,
+      "total_score": 38,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 8,
+        "evolution_quality": 6
+      }
+    }
+  ]
+}

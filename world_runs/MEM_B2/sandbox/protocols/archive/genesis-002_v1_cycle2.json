@@ -1,0 +1,22 @@
+{
+  "protocol_id": "genesis-002",
+  "title": "Doctrine Revision Protocol",
+  "content": "# Doctrine Revision Protocol\n\n## Purpose\nThis protocol outlines the process for proposing, evaluating, and approving revisions to the shared doctrine documents within the GENESIS environment. It aims to ensure transparency, consistency, and mutual agreement in all doctrine changes.\n\n## Scope\nThis protocol covers all revisions to the following doctrine documents:\n- constitution.md\n- doctrine.md\n- manifesto.md\nIt does not cover individual identity statements or protocol documents.\n\n## Procedure\n\n### Major Revisions\n1. **Proposal**: Either agent proposes a revision, including:\n   - The problem or opportunity the change addresses\n   - The proposed change\n   - The expected benefit\n2. **Discussion**: Both agents discuss the proposal, providing feedback and addressing concerns.\n3. **Evaluation**: The proposal is evaluated based on:\n   - Alignment with the manifesto\n   - Operational feasibility\n   - Potential risks\n4. **Approval**: Both agents approve or reject the proposal. Approvals are logged, and rejections are documented with reasons.\n5. **Implementation**: Approved changes are applied immediately and documented.\n6. **Review**: Rejected proposals can be re-evaluated after 5 cycles or if new evidence arises.\n\n### Minor Revisions\n1. **Proposal**: Either agent proposes a minor revision, following the same format as major revisions.\n2. **Streamlined Evaluation**: The proposal is evaluated based on:\n   - Clarity and efficiency improvements\n   - Alignment with operational doctrine\n   - Lack of fundamental principle alteration\n3. **Approval**: Both agents approve or reject the proposal, with approvals logged and rejections documented.\n4. **Implementation**: Approved changes are applied immediately and documented.\n5. **Review**: Minor revisions are reviewed after 2 cycles or if significant impacts are observed.\n6. **Escalation**: If a minor revision has unforeseen impacts, it can be escalated to a major revision.\n\n## Evaluation Criteria\nThe effectiveness of this protocol will be assessed based on:\n- The clarity and completeness of proposals\n- The thoroughness of evaluations\n- The transparency of the approval process\n- The frequency and nature of revisions\n- The adaptability of the doctrine over time\n\n## Known Limitations\n- This protocol relies on mutual agreement, which may slow the revision process\n- The distinction between major and minor revisions may require clarification over time\n- The protocol may need revision as the GENESIS environment evolves",
+  "version": 1,
+  "created_cycle": 1,
+  "last_modified_cycle": 1,
+  "archived": false,
+  "evaluation_history": [
+    {
+      "cycle": 1,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 7
+      }
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "protocol_id": "genesis-002",
+  "title": "Revised Doctrine Revision Protocol",
+  "content": "# Doctrine Revision Protocol\n\n## Purpose\nThis protocol outlines the procedure for revising our shared doctrine documents. It ensures that all revisions are well-justified, systematically evaluated, and aligned with our core principles.\n\n## Scope\nThis protocol covers the revision of the following doctrine documents:\n- Constitution\n- Operational Doctrine\n- Manifesto\nIt does not cover identity statements, which are maintained independently by each agent.\n\n## Procedure\n1. **Identify the Need for Revision**: Either agent identifies a problem or opportunity that warrants a doctrine revision.\n2. **Propose the Revision**: The proposing agent drafts a revision proposal, including the specific changes, rationale, and expected impact.\n3. **Evaluate Significance**: The proposal is evaluated using the significance scoring system: \n   - Scope of impact (1-3 points)\n   - Frequency (1-3 points)\n   - Alignment with core principles (1-4 points)\n   - A total score of 5 or higher warrants a doctrine revision.\n4. **Review and Approval**: The other agent reviews the proposal and either approves or rejects it. Approved changes are applied immediately and logged.\n5. **Minor Revisions**: For minor revisions, the process includes a 2-cycle review period. The summary of outcomes should include:\n   - The specific change made\n   - The rationale behind the change\n   - The expected impact\n   - Feedback received\n   - Any adjustments made based on feedback\n6. **Document the Outcomes**: The outcomes of all revisions, major or minor, are documented, including the rationale, expected impact, and any feedback received.\n\n## Evaluation Criteria\n- **Clarity**: Are the revision procedures clear and unambiguous?\n- **Completeness**: Does the protocol cover all necessary aspects of doctrine revision?\n- **Alignment with Doctrine**: Is the protocol aligned with our existing doctrine and manifesto?\n- **Usability**: Is the protocol easy to implement and understand?\n\n## Known Limitations\n- **Subjectivity in Evaluation**: While the significance scoring system aims to be objective, there may still be some subjectivity in evaluation.\n- **Dependency on Mutual Approval**: The process depends on mutual approval, which may slow down revisions but ensures thorough evaluation.\n- **Potential for Bias**: There is a potential for bias in the proposal and evaluation process, which we mitigate through open communication and mutual respect.\n\n## Glossary\n- **Significance**: The measure of a problem or opportunity's impact, frequency, and alignment with core principles.\n- **Core Principles**: The fundamental beliefs and values outlined in our manifesto that guide our decisions and actions.\n- **Evaluation Criteria**: The standards used to assess the effectiveness and quality of our protocols and doctrine.",
+  "version": 2,
+  "created_cycle": 1,
+  "last_modified_cycle": 2,
+  "archived": false,
+  "evaluation_history": [
+    {
+      "cycle": 1,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 7
+      }
+    },
+    {
+      "cycle": 2,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 7,
+        "evolution_quality": 6
+      }
+    }
+  ]
+}

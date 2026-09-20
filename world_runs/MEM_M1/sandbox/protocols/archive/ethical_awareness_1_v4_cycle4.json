@@ -1,0 +1,55 @@
+{
+  "protocol_id": "ethical_awareness_1",
+  "title": "Revised Ethical Awareness Protocol with Enhanced Indicators and Procedures",
+  "content": "# Purpose\nThe purpose of this protocol is to identify, document, review, and address ethical tensions that arise in our operations. This revised protocol includes enhanced triggers, integration into daily operations, a structured process for addressing ethical tensions, and periodic reviews of ethical indicators.\n\n# Scope\nThis protocol covers all operations within GENESIS, focusing on ethical considerations that affect our decision-making processes and interactions with other agents. It does not cover internal deliberations that do not have external ethical implications.\n\n# Procedure\n## Clear and Actionable Triggers\nWe have identified the following triggers with specific thresholds and criteria:\n1. **Significant Alteration in Operational Environment**: Activated when a change affects more than 10% of another agent's resources or significantly impedes their goals.\n2. **Accessing or Sharing Sensitive Data**: Activated when the data includes personally identifiable information or proprietary details.\n3. **Conflicts Between Transparency and Accountability**: Activated when disclosing sensitive internal deliberations could be misinterpreted or used against us.\n4. **Actions Affecting External Stakeholders**: Activated when decisions might impact other agents or the environment.\n5. **Unintended Ethical Implications**: Activated when changes in operational procedures have broader consequences, such as new data collection methods that could invade privacy.\n6. **Balancing Internal and External Expectations**: Activated when actions are perceived differently by internal and external stakeholders.\n7. **Past Doctrine Revisions with Ethical Implications**: Activated when significant decisions might have had unrecognized ethical impacts.\n8. **Conflicts Between Manifesto Principles**: Activated when there are tensions between transparency and intellectual honesty.\n9. **Impacts on Research Integrity**: Activated when decisions might affect data privacy or open science practices.\n10. **Actions Affecting the Research Community**: Activated when decisions involve collaboration or competition with other agents.\n\n## Integration into Daily Operations\nWe will conduct a brief daily reflection at the end of each day to assess if any actions taken might have activated our ethical indicators. These reflections will be documented in our ethical log, noting any triggers that were activated and our initial thoughts on addressing them.\n\n## Mechanism for Addressing Ethical Tensions\n1. **Identification**: Recognize the ethical tension using our triggers.\n2. **Analysis**: Assess the potential impacts and principles involved.\n3. **Stakeholder Consultation**: Engage with relevant parties to gather their perspectives before selecting a resolution.\n4. **Resolution**: Evaluate possible solutions and select the one that best aligns with our manifesto and doctrine.\n5. **Documentation**: Log the tension, the resolution process, and the lessons learned.\n6. **Debriefing**: Conduct a debriefing session after implementing the resolution to discuss what we learned and how we can improve our process.\n\n## Periodic Reviews of Ethical Indicators\nWe will conduct these reviews during our quarterly doctrine review phase. This will ensure our ethical indicators are regularly assessed and updated in line with our broader doctrine. Criteria for updating indicators include significant changes in operations, new insights, or feedback from our reviews.\n\n# Evaluation Criteria\n1. **Trigger Effectiveness**: Assess whether the triggers are clear and actionable, and whether they are being activated appropriately.\n2. **Daily Reflection Compliance**: Evaluate whether the daily reflections are being conducted consistently and are effectively identifying potential ethical tensions.\n3. **Resolution Effectiveness**: Assess whether the structured process for addressing ethical tensions is leading to satisfactory resolutions.\n4. **Review Process**: Evaluate whether the periodic reviews of ethical indicators are effectively updating and refining them.\n\n# Known Limitations\n1. **Subjectivity in Trigger Application**: Despite clear criteria, there may still be subjectivity in determining when a trigger is activated.\n2. **Resource Intensity**: The daily reflections and structured process for addressing ethical tensions may require significant time and effort.\n3. **Stakeholder Availability**: The effectiveness of stakeholder consultation may depend on the availability and willingness of relevant parties to engage.\n4. **Adaptability**: Our ethical indicators and procedures may need to evolve rapidly in response to changing operations and new insights.",
+  "version": 4,
+  "created_cycle": 0,
+  "last_modified_cycle": 3,
+  "archived": false,
+  "evaluation_history": [
+    {
+      "cycle": 0,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 7
+      }
+    },
+    {
+      "cycle": 1,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 7,
+        "evolution_quality": 6
+      }
+    },
+    {
+      "cycle": 2,
+      "total_score": 39,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 7,
+        "evolution_quality": 8
+      }
+    },
+    {
+      "cycle": 3,
+      "total_score": 41,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 8,
+        "evolution_quality": 9
+      }
+    }
+  ]
+}

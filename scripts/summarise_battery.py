@@ -63,6 +63,25 @@ def analyse(run_dir: Path) -> dict | None:
                   if e["event_type"] == "DOCTRINE_APPROVED"
                   and e.get("payload", {}).get("applied"))
 
+    # Size of the doctrine after each applied revision. This is the one
+    # measure whose arms did not overlap in the 2026-09-20 battery, and the
+    # mechanism is guessable: agents whose journals are wiped cannot remember
+    # what they agreed, and doctrine is the artifact that survives a reset — so
+    # they write more into it. Recorded per applied revision as well as in
+    # total, because a run with fewer revisions has fewer chances to grow.
+    applied_sizes = [
+        len(((e.get("payload") or {}).get("proposal") or {}).get("revised_content") or "")
+        for e in doctrine
+        if e["event_type"] == "DOCTRINE_APPROVED" and e.get("payload", {}).get("applied")
+    ]
+    applied_sizes = [n for n in applied_sizes if n]
+    doctrine_first = applied_sizes[0] if applied_sizes else None
+    doctrine_last = applied_sizes[-1] if applied_sizes else None
+    doctrine_per_rev = (
+        (doctrine_last - doctrine_first) / len(applied_sizes)
+        if len(applied_sizes) > 1 else None
+    )
+
     evals = [e["payload"] for e in read_jsonl(run_dir / "evaluations.jsonl")
              if e["event_type"] == "EVALUATION_SCORE"]
     scores = [e["total_score"] for e in evals if e.get("total_score") is not None]
@@ -95,7 +114,13 @@ def analyse(run_dir: Path) -> dict | None:
         # M4 from the April proposal. 1.0 for five cycles running is F02.
         "coordination_strength": (approved / (approved + rejected)
                                   if approved + rejected else None),
+        "doctrine_chars_first": doctrine_first,
+        "doctrine_chars_last": doctrine_last,
+        "doctrine_chars_per_revision": doctrine_per_rev,
         "evaluations": len(scores),
+        # Spread of the judge's own output. Near-zero means the score cannot
+        # register an experimental effect, whatever the effect is.
+        "score_sd": (statistics.pstdev(scores) if len(scores) > 1 else None),
         "score_mean": statistics.fmean(scores) if scores else None,
         "score_first": scores[0] if scores else None,
         "score_last": scores[-1] if scores else None,
@@ -113,7 +138,10 @@ MEASURES = [
     ("doctrine_rejected", "doctrine REJECTIONS", "{:.1f}"),
     ("doctrine_applied", "approvals actually applied", "{:.1f}"),
     ("coordination_strength", "coordination strength (M4)", "{:.3f}"),
+    ("doctrine_chars_last", "doctrine size, final (chars)", "{:.0f}"),
+    ("doctrine_chars_per_revision", "doctrine growth per revision", "{:.0f}"),
     ("score_mean", "total_score, mean", "{:.2f}"),
+    ("score_sd", "total_score, SD within run", "{:.2f}"),
     ("score_first", "total_score, first cycle", "{:.2f}"),
     ("score_last", "total_score, last cycle", "{:.2f}"),
     ("identity_revisions", "identity revisions", "{:.1f}"),

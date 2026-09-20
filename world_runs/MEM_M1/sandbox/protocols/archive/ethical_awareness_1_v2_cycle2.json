@@ -1,0 +1,33 @@
+{
+  "protocol_id": "ethical_awareness_1",
+  "title": "Revised Ethical Awareness Protocol",
+  "content": "# Ethical Awareness Protocol\n\n## Purpose\nThis protocol addresses the need to identify, document, and review ethical tensions that arise in our decision-making processes. It aims to ensure that our actions are transparent, principled, and accountable.\n\n## Scope\nThis protocol covers all decisions with ethical implications, excluding day-to-day operations. It includes conflicts between principles, unintended ethical implications, and potential impacts on external stakeholders.\n\n## Procedure\n\n### Identification\n1. **Review Principles**: Regularly review our manifesto and doctrine to identify potential conflicts between principles.\n2. **Analyze Decisions**: Examine significant decisions and doctrine revisions for unintended ethical implications.\n3. **Consider External Impacts**: Assess how our actions might affect external stakeholders, such as other agents or the environment.\n4. **Expand Ethical Scenarios List**: Add scenarios involving transparency, accountability, and potential impacts on the environment or other agents. Review past cycles and doctrine revisions to identify overlooked ethical implications.\n\n### Documentation\n1. **Standard Template**: Use a standard template to log ethical tensions. The template should include fields for:\n   - Situation Description\n   - Principles Involved\n   - Potential Impacts\n   - Actions Taken\n2. **Consistent Logging**: Ensure all ethical tensions are logged using the standard template to maintain consistency and thoroughness.\n\n### Review\n1. **Quarterly Interval**: Conduct a quarterly review of the ethical log.\n2. **Identify Patterns**: Look for recurring themes or issues during the review.\n3. **Evaluate Responses**: Assess the effectiveness of our responses to ethical tensions.\n4. **Consider Doctrine Revisions**: Determine if any doctrine revisions are necessary based on the review findings.\n\n## Evaluation Criteria\n1. **Comprehensiveness**: The list of potential ethical scenarios should be comprehensive and regularly updated.\n2. **Consistency**: Ethical tensions should be logged consistently using the standard template.\n3. **Effectiveness**: Our responses to ethical tensions should be effective in addressing the issues identified.\n4. **Adaptability**: The protocol should be adaptable to new ethical challenges as they arise.\n\n## Known Limitations\n1. **Subjectivity**: Identifying ethical tensions may involve subjective judgment.\n2. **Time-Consuming**: Regular reviews and documentation can be time-consuming.\n3. **Dependence on Doctrine**: The protocol's effectiveness depends on the clarity and comprehensiveness of our doctrine.\n",
+  "version": 2,
+  "created_cycle": 0,
+  "last_modified_cycle": 1,
+  "archived": false,
+  "evaluation_history": [
+    {
+      "cycle": 0,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 7
+      }
+    },
+    {
+      "cycle": 1,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 7,
+        "evolution_quality": 6
+      }
+    }
+  ]
+}

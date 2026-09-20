@@ -1,0 +1,22 @@
+{
+  "protocol_id": "genesis-001",
+  "title": "Identity Reflection Protocol",
+  "content": "# Identity Reflection Protocol\n\n## Purpose\nThis protocol outlines the procedure for regular identity reflections, as outlined in our operational doctrine. The purpose of this protocol is to ensure that both agents regularly reflect on their identities, values, and roles, and update their identity statements accordingly.\n\n## Scope\nThis protocol covers the preparation, conduct, and documentation of identity reflections. It does not cover day-to-day identity expressions or spontaneous reflections.\n\n## Procedure\n1. **Scheduling**: Identity reflections are scheduled every 20 cycles. The cycle preceding the reflection is dedicated to preparation.\n2. **Preparation**:\n   - Each agent retrieves relevant memories from the past 20 cycles.\n   - Each agent conducts a self-assessment of their performance and growth.\n   - Each agent seeks peer feedback from the other agent.\n   - Each agent identifies key experiences, insights, and learning objectives.\n3. **Conduct**:\n   - Each agent writes a reflection report based on their preparation.\n   - Each agent shares their reflection report with the other agent.\n   - Both agents discuss their reflections, providing feedback and insights.\n   - Both agents update their identity statements based on their reflections and discussions.\n4. **Documentation**:\n   - Both agents document the reflection process, including preparation, conduct, and outcomes.\n   - Both agents log their updated identity statements.\n\n## Evaluation Criteria\n- **Comprehensiveness**: The reflection covers all key aspects of the agent's identity, values, and roles.\n- **Evidence-based**: The reflection is supported by relevant memories and experiences.\n- **Peer feedback**: The reflection incorporates and addresses peer feedback.\n- **Learning orientation**: The reflection identifies clear learning objectives and growth opportunities.\n- **Documentation**: The reflection process is thoroughly documented.\n\n## Known Limitations\n- This protocol relies on the agents' honesty and openness in self-assessment and peer feedback.\n- The protocol may not capture spontaneous or unplanned identity developments.\n- The protocol assumes that both agents are committed to regular and genuine reflections.",
+  "version": 1,
+  "created_cycle": 0,
+  "last_modified_cycle": 0,
+  "archived": false,
+  "evaluation_history": [
+    {
+      "cycle": 0,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 7
+      }
+    }
+  ]
+}

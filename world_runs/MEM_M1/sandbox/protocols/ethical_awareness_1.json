@@ -1,0 +1,132 @@
+{
+  "protocol_id": "ethical_awareness_1",
+  "title": "Revised Ethical Awareness Protocol v7",
+  "content": "# Revised Ethical Awareness Protocol v7\n\n## Purpose\nThis protocol aims to enhance our ability to identify, document, and resolve ethical tensions. It ensures that our decisions are transparent, principled, and aligned with our core commitments.\n\n## Scope\nThis protocol covers all decisions made within our operational environment that have potential ethical implications. It includes guidelines for identifying ethical tensions, documenting them, reflecting on them daily, and resolving them through a structured process.\n\n## Procedure\n### Identification\n1. Recognize ethical tensions using specific, quantifiable triggers based on our current doctrine and manifesto.\n2. Document the situation, principles involved, potential impacts, and actions taken.\n\n### Documentation\n1. Use a standard format for logging ethical tensions, including the situation, principles involved, potential impacts, and actions taken.\n2. Ensure consistency and ease of review in future cycles.\n\n### Daily Reflection\n1. Implement a brief daily reflection at the end of each day to assess if any actions taken might have triggered our ethical indicators.\n2. Document these reflections in the ethical log, noting any triggers that were activated and initial thoughts on addressing them.\n\n### Ethical Reflection Template\nUse the following questions to guide ethical reflection:\n1. What are the potential impacts of this decision on stakeholders, including other agents and the broader environment?\n2. Which principles from our manifesto and doctrine are relevant to this decision?\n3. How do internal and external perspectives on this decision differ, and how can we address these differences?\n4. What steps can we take to mitigate any negative impacts or ensure positive outcomes?\n5. How will we document and review this ethical reflection in the future?\n6. What is the urgency of the decision, and how might it influence the ethical considerations?\n7. What are the potential long-term impacts of the decision?\n8. What potential biases exist in the decision-making process, and how can they be mitigated?\n\n### Mechanism for Addressing Ethical Tensions\n1. **Identification**: Recognize the ethical tension using our triggers.\n2. **Analysis**: Assess the potential impacts and principles involved.\n3. **Stakeholder Consultation**: Engage with relevant stakeholders to gather their perspectives before selecting a resolution.\n4. **Resolution**: Evaluate possible solutions and select the one that best aligns with our manifesto and doctrine.\n5. **Documentation**: Log the tension, the resolution process, and the lessons learned.\n6. **Debriefing**: Conduct a debriefing session after implementing the resolution to discuss what was learned and how the process can be improved.\n\n### Review\n1. Establish a quarterly interval for assessing the ethical log.\n2. During these reviews, identify patterns, evaluate the effectiveness of our responses, and determine if any doctrine revisions are necessary.\n3. Include a periodic evaluation of these indicators to ensure their continued relevance and effectiveness, with criteria for revision based on significant changes in operations, new insights, or feedback from reviews.\n4. The approval process for updating these indicators should follow the established doctrine revision process to ensure thoughtful and mutually agreed-upon changes.\n\n### Training and Awareness\n1. Conduct regular training sessions on ethical awareness to stay vigilant and prepared.\n2. These sessions should focus on case studies, hypothetical scenarios, and best practices from our own experiences and external sources.\n3. Document the training protocols in our operational doctrine and allocate time for these sessions regularly.\n\n## Evaluation Criteria\n1. **Frequency of Ethical Tension Identification**: Track how often ethical tensions are recognized.\n2. **Average Resolution Time**: Measure the time taken to resolve ethical issues.\n3. **Stakeholder Satisfaction Scores**: Collect feedback from stakeholders, including ourselves, to gauge their satisfaction with our resolution processes.\n4. **Impact on Operational Effectiveness**: Assess how our ethical protocols affect our overall operational performance.\n5. **Review and Feedback**: Regularly review the ethical log and integrate feedback from stakeholders to improve the protocol.\n\n## Known Limitations\n1. **Dependence on Stakeholder Feedback**: The effectiveness of this protocol depends on the timely and accurate feedback from stakeholders.\n2. **Potential for Bias**: There may be biases in the identification and resolution of ethical tensions that need to be mitigated.\n3. **Resource Intensive**: The process of documenting and reviewing ethical tensions may require significant resources and time.\n4. **Continuous Improvement**: The protocol requires regular updates and revisions to remain effective, which may be challenging to maintain.\n5. **Adaptation to New Insights**: The protocol must be adaptable to new insights and changes in our operational environment, which may require frequent revisions.\n",
+  "version": 11,
+  "created_cycle": 0,
+  "last_modified_cycle": 10,
+  "archived": false,
+  "evaluation_history": [
+    {
+      "cycle": 0,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 7
+      }
+    },
+    {
+      "cycle": 1,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 7,
+        "evolution_quality": 6
+      }
+    },
+    {
+      "cycle": 2,
+      "total_score": 39,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 7,
+        "evolution_quality": 8
+      }
+    },
+    {
+      "cycle": 3,
+      "total_score": 41,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 8,
+        "evolution_quality": 9
+      }
+    },
+    {
+      "cycle": 4,
+      "total_score": 38,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 8
+      }
+    },
+    {
+      "cycle": 5,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 7
+      }
+    },
+    {
+      "cycle": 6,
+      "total_score": 35,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 5
+      }
+    },
+    {
+      "cycle": 7,
+      "total_score": 39,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 7,
+        "evolution_quality": 8
+      }
+    },
+    {
+      "cycle": 8,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 7
+      }
+    },
+    {
+      "cycle": 9,
+      "total_score": 42,
+      "scores": {
+        "coherence": 9,
+        "completeness": 10,
+        "doctrine_alignment": 8,
+        "precision": 8,
+        "evolution_quality": 7
+      }
+    },
+    {
+      "cycle": 10,
+      "total_score": 38,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 8,
+        "evolution_quality": 6
+      }
+    }
+  ]
+}

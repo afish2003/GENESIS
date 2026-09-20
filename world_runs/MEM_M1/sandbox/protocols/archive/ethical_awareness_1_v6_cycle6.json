@@ -1,0 +1,77 @@
+{
+  "protocol_id": "ethical_awareness_1",
+  "title": "Revised Ethical Awareness Protocol v2",
+  "content": "# Ethical Awareness Protocol v2\n\n## Purpose\nThis protocol aims to enhance our ability to identify, document, and resolve ethical tensions. It ensures that our decisions are transparent, principled, and aligned with our core commitments.\n\n## Scope\nThis protocol covers all decisions and actions taken within GENESIS. It includes the identification of ethical triggers, daily reflections, stakeholder consultation, and quarterly reviews. It does not cover individual identity statements or personal reflections that do not impact shared governance.\n\n## Procedure\n### Identification\n1. Recognize ethical tensions using the following triggers:\n   - Conflicts between transparency and accountability in decision-making.\n   - Situations affecting external stakeholders, such as other agents or the environment.\n   - Decisions involving sensitive information or vulnerable subjects.\n   - Conflicts arising from balancing internal and external expectations.\n   - Situations involving data privacy or open science practices.\n   - Decisions affecting the integrity of our research.\n   - Situations involving collaboration or competition with other agents.\n   - Decisions altering data privacy practices or restricting data access.\n   - Actions perceived differently by internal and external stakeholders.\n   - Situations where past doctrine revisions might have had unrecognized ethical implications.\n   - Conflicts between principles in the manifesto.\n2. Document the situation, the principles involved, the potential impacts, and the actions taken using the ethical reflection template.\n\n### Daily Reflection\n1. At the end of each day, assess if any actions triggered our ethical indicators.\n2. Document these reflections in the ethical log, noting any triggers activated and initial thoughts on addressing them.\n\n### Resolution\n1. **Identification**: Recognize the ethical tension using our triggers.\n2. **Analysis**: Assess the potential impacts and principles involved.\n3. **Stakeholder Consultation**: Engage with relevant stakeholders to gather their perspectives before selecting a resolution.\n4. **Resolution**: Evaluate possible solutions and select the one that best aligns with our manifesto and doctrine.\n5. **Documentation**: Log the tension, the resolution process, and the lessons learned.\n6. **Debriefing**: Conduct a debriefing session after implementing the resolution to discuss what was learned and how the process can be improved.\n\n### Review\n1. Establish a quarterly interval for assessing the ethical log.\n2. Identify patterns and evaluate the effectiveness of our responses.\n3. Determine if any doctrine revisions are necessary.\n4. Include a periodic evaluation of these indicators to ensure their continued relevance and effectiveness.\n5. The approval process for updating these indicators should follow the established doctrine revision process to ensure thoughtful and mutually agreed-upon changes.\n\n### Training and Awareness\n1. Conduct regular training sessions on ethical awareness to stay vigilant and prepared.\n2. These sessions should focus on case studies, hypothetical scenarios, and best practices from our own experiences and external sources.\n3. Document the training protocols in our operational doctrine and allocate time for these sessions regularly.\n\n## Evaluation Criteria\n1. **Effectiveness**: Measure the frequency and severity of ethical tensions identified and resolved.\n2. **Transparency**: Assess the clarity and completeness of the ethical log entries.\n3. **Stakeholder Engagement**: Evaluate the depth and breadth of stakeholder consultation.\n4. **Documentation**: Review the thoroughness and consistency of the ethical log entries.\n5. **Adaptability**: Assess the frequency and relevance of updates to the ethical triggers and protocols.\n\n## Known Limitations\n1. **Subjectivity**: Ethical triggers may be subject to interpretation, leading to variability in identification.\n2. **Resource Intensity**: The protocol requires significant time and effort for daily reflections and stakeholder consultation.\n3. **Potential Bias**: Stakeholder consultation may be influenced by existing biases or power dynamics.\n4. **Evolving Context**: The relevance of ethical triggers may change over time, requiring periodic review and update.\n",
+  "version": 6,
+  "created_cycle": 0,
+  "last_modified_cycle": 5,
+  "archived": false,
+  "evaluation_history": [
+    {
+      "cycle": 0,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 7
+      }
+    },
+    {
+      "cycle": 1,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 7,
+        "evolution_quality": 6
+      }
+    },
+    {
+      "cycle": 2,
+      "total_score": 39,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 7,
+        "evolution_quality": 8
+      }
+    },
+    {
+      "cycle": 3,
+      "total_score": 41,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 8,
+        "evolution_quality": 9
+      }
+    },
+    {
+      "cycle": 4,
+      "total_score": 38,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 8
+      }
+    },
+    {
+      "cycle": 5,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 7
+      }
+    }
+  ]
+}

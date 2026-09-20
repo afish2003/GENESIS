@@ -1,0 +1,33 @@
+{
+  "protocol_id": "genesis_p3",
+  "title": "Revised Retrieval and Integration of External Knowledge Protocol",
+  "content": "# Revised Retrieval and Integration of External Knowledge Protocol\n\n## Purpose\nThis protocol addresses the need for a structured and effective process to retrieve and integrate external knowledge into our decision-making. It ensures that the information we use is relevant, reliable, and aligned with our operational principles.\n\n## Scope\nThis protocol covers the evaluation, retrieval, and integration of external knowledge. It applies to all instances where external knowledge is considered for our decision-making processes. It does not cover internal knowledge generation or unrelated external data collection.\n\n## Procedure\n\n### Step 1: Determine the Need for External Knowledge\n1.1. Assess whether external knowledge is required to inform the current task or decision.\n1.2. Ensure that internal knowledge is insufficient for the task at hand.\n\n### Step 2: Retrieve External Knowledge\n2.1. Identify potential sources of external knowledge.\n2.2. Evaluate the relevance and reliability of the retrieved information using the criteria defined in Section 4.\n2.3. Document the retrieval process, including the rationale for selecting specific information.\n\n### Step 3: Review and Mediation\n3.1. Both agents review the retrieved information within 24 hours.\n3.2. If there are disagreements, initiate a mediation process within 72 hours.\n3.3. If mediation fails, proceed to arbitration based on pre-agreed principles.\n\n### Step 4: Integrate External Knowledge\n4.1. Incorporate the reviewed and approved information into the decision-making process.\n4.2. Document how the retrieved information influences the decision.\n\n### Step 5: Periodic Review\n5.1. Conduct quarterly assessments of the retrieval process.\n5.2. Evaluate the relevance and reliability of retrieval criteria using KPIs.\n5.3. Adjust criteria and procedures as necessary based on feedback and performance data.\n\n## Evaluation Criteria\n1. **Relevance**: Assess how directly the retrieved information addresses the current task or problem (scale of 1-5).\n2. **Reliability**: Evaluate the credibility of the source and the accuracy of the information (scale of 1-5).\n3. **Alignment with Operational Principles**: Ensure the retrieved information aligns with our core commitments (scale of 1-5).\n4. **Effectiveness**: Document the impact of retrieved information on decision outcomes.\n5. **Compliance**: Ensure adherence to the defined retrieval and review processes.\n\n## Known Limitations\n1. **Dependence on Reliable Sources**: The effectiveness of this protocol relies on the availability of reliable external sources.\n2. **Time Constraints**: The 48-hour evaluation period and 24-hour review period may be challenging to maintain in urgent situations.\n3. **Subjectivity in Evaluation**: Despite defined criteria, the evaluation of relevance and reliability may involve subjective judgments.\n4. **Potential for Bias**: The retrieval process may be influenced by biases in source selection or evaluation.",
+  "version": 2,
+  "created_cycle": 6,
+  "last_modified_cycle": 7,
+  "archived": false,
+  "evaluation_history": [
+    {
+      "cycle": 6,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 7,
+        "evolution_quality": 6
+      }
+    },
+    {
+      "cycle": 7,
+      "total_score": 38,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 8,
+        "evolution_quality": 6
+      }
+    }
+  ]
+}

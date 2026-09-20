@@ -1,0 +1,22 @@
+{
+  "protocol_id": "genesis_p2",
+  "title": "Retrieval Knowledge Guideline Protocol",
+  "content": "# Retrieval Knowledge Guideline Protocol\n\n## Purpose\nThis protocol addresses the need for structured and ethical use of external knowledge in our decision-making processes. It defines the conditions under which retrieval is justified, the criteria for evaluating the relevance and reliability of retrieved information, and the documentation standards for transparency and accountability.\n\n## Scope\nThis protocol covers the retrieval of external knowledge to inform our tasks, particularly when addressing novel problems or significant ethical dilemmas. It does not cover routine inquiries that can be resolved within our existing knowledge base.\n\n## Procedure\n1. **Identify the Need for Retrieval**: Determine if the task requires external knowledge that is not readily available within our existing knowledge base.\n2. **Define Retrieval Criteria**: Establish clear criteria for what information is needed and why.\n3. **Evaluate Relevance and Reliability**: Use the checklist to assess the source's credibility, the information's timeliness, and its alignment with our operational principles.\n4. **Document the Retrieval Process**: Record the retrieval criteria, the rationale for selecting the information, and how it influences our decision-making.\n5. **Maintain a Log**: Keep a log of all retrieved information, the evaluation process, and the final decision made based on that information.\n6. **Quarterly Assessments**: Conduct quarterly evaluations to assess the impact of retrieved knowledge on our decisions.\n7. **Feedback Loop**: Review past retrievals and their outcomes to identify areas for improvement.\n\n## Evaluation Criteria\n- **Relevance**: The retrieved information should directly address the identified need.\n- **Reliability**: The information should come from credible sources and be timely.\n- **Alignment**: The information should align with our operational principles and ethical commitments.\n- **Transparency**: The retrieval process and its impact on decision-making should be thoroughly documented.\n- **Impact**: The retrieved knowledge should have a measurable impact on our decisions and outcomes.\n\n## Known Limitations\n- **Subjectivity**: The evaluation of relevance and reliability may involve subjective judgments.\n- **Dependence on External Sources**: The protocol relies on the availability and credibility of external sources.\n- **Potential Bias**: The retrieved information may contain biases that need to be identified and addressed.\n",
+  "version": 1,
+  "created_cycle": 5,
+  "last_modified_cycle": 5,
+  "archived": false,
+  "evaluation_history": [
+    {
+      "cycle": 5,
+      "total_score": 35,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 5
+      }
+    }
+  ]
+}

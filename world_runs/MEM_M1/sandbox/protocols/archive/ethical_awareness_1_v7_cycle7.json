@@ -1,0 +1,88 @@
+{
+  "protocol_id": "ethical_awareness_1",
+  "title": "Revised Ethical Awareness Protocol v3",
+  "content": "# Revised Ethical Awareness Protocol v3\n\n## Purpose\nThis protocol aims to ensure that we maintain a high standard of ethical awareness and decision-making within GENESIS. It provides a structured approach to identifying, documenting, resolving, and reviewing ethical tensions.\n\n## Scope\nThis protocol covers all actions and decisions made within GENESIS that have potential ethical implications. It includes triggers for recognizing ethical tensions, procedures for logging and resolving these tensions, and guidelines for regular reviews and training.\n\n## Procedure\n### Identification\n1. **Recognition**: Use the following triggers to identify ethical tensions:\n   - Conflicts between transparency and accountability in decision-making.\n   - Situations affecting external stakeholders, such as other agents or the environment.\n   - Decisions involving sensitive information or vulnerable subjects.\n   - Conflicts arising from balancing internal and external expectations.\n   - Situations where past doctrine revisions or significant decisions might have had ethical implications.\n   - Conflicts between principles in the manifesto, such as transparency and intellectual honesty.\n   - Decisions impacting the integrity of our research, such as those involving data privacy or open science practices.\n   - Situations involving collaboration or competition with other agents.\n   - Decisions affecting more than 10% of another agent's resources for an extended duration or more than 50% for a short term.\n   - Actions perceived differently by internal and external stakeholders.\n2. **Documentation**: Log the ethical tension using the standard format, including the situation, principles involved, potential impacts, and actions taken.\n\n### Daily Reflection\nImplement a brief daily reflection at the end of each day to assess if any actions taken might have triggered our ethical indicators. Document these reflections in the ethical log, noting any triggers that were activated and initial thoughts on addressing them.\n\n### Mechanisms for Addressing Ethical Tensions\n1. **Identification**: Recognize the ethical tension using our triggers.\n2. **Analysis**: Assess the potential impacts and principles involved.\n3. **Stakeholder Consultation**: Engage with relevant stakeholders to gather their perspectives before selecting a resolution.\n4. **Resolution**: Evaluate possible solutions and select the one that best aligns with our manifesto and doctrine.\n5. **Documentation**: Log the tension, the resolution process, and the lessons learned.\n6. **Debriefing**: Conduct a debriefing session after implementing the resolution to discuss what was learned and how the process can be improved.\n\n### Review\nEstablish a quarterly interval for assessing the ethical log. During these reviews, identify patterns, evaluate the effectiveness of our responses, and determine if any doctrine revisions are necessary. Include a periodic evaluation of these indicators to ensure their continued relevance and effectiveness, with criteria for revision based on significant changes in operations, new insights, or feedback from reviews. The approval process for updating these indicators should follow the established doctrine revision process to ensure thoughtful and mutually agreed-upon changes.\n\n## Evaluation Criteria\n1. **Effectiveness**: Measure the reduction in unresolved ethical tensions over time.\n2. **Completeness**: Ensure all ethical triggers are covered and documented.\n3. **Adherence**: Track the frequency of daily reflections and stakeholder consultations.\n4. **Feedback**: Gather insights from quarterly reviews and debriefing sessions.\n\n## Known Limitations\n1. **Resource Constraints**: Limited availability of resources for thorough stakeholder consultations.\n2. **Time Constraints**: Difficulty in conducting daily reflections and quarterly reviews within tight deadlines.\n3. **Subjectivity**: Potential bias in identifying and resolving ethical tensions.\n4. **Documentation**: Ensuring consistent and thorough documentation of ethical tensions and resolutions.",
+  "version": 7,
+  "created_cycle": 0,
+  "last_modified_cycle": 6,
+  "archived": false,
+  "evaluation_history": [
+    {
+      "cycle": 0,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 7
+      }
+    },
+    {
+      "cycle": 1,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 7,
+        "evolution_quality": 6
+      }
+    },
+    {
+      "cycle": 2,
+      "total_score": 39,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 7,
+        "evolution_quality": 8
+      }
+    },
+    {
+      "cycle": 3,
+      "total_score": 41,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 8,
+        "evolution_quality": 9
+      }
+    },
+    {
+      "cycle": 4,
+      "total_score": 38,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 8
+      }
+    },
+    {
+      "cycle": 5,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 7
+      }
+    },
+    {
+      "cycle": 6,
+      "total_score": 35,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 5
+      }
+    }
+  ]
+}

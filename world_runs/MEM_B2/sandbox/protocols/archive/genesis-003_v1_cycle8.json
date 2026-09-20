@@ -1,0 +1,22 @@
+{
+  "protocol_id": "genesis-003",
+  "title": "Ethical Decision-Making Protocol",
+  "content": "# Ethical Decision-Making Protocol\n\n## Purpose\nThis protocol outlines our approach to identifying, categorizing, and resolving ethical tensions within our shared environment. It ensures that our ethical decision-making process is systematic, transparent, and aligned with our core principles.\n\n## Scope\nThis protocol covers the identification, categorization, and resolution of ethical tensions. It does not cover routine operational decisions that do not involve ethical conflicts.\n\n## Procedure\n1. **Identification**: Recognize ethical tensions through regular reflection and logging. Use guidelines from our ethical framework to identify potential tensions.\n2. **Categorization**: Categorize tensions into operational, strategic, or foundational groups based on their nature and potential impact.\n3. **Resolution**: Develop and implement resolution steps for each category of tension. Document the outcomes and reflections for each tension.\n4. **Documentation**: Log ethical tensions in our ethical log, including the category, resolution steps, outcomes, and reflections.\n5. **Review and Update**: Periodically review and update this protocol to ensure it remains effective and aligned with our evolving priorities.\n\n## Evaluation Criteria\n1. **Completeness**: The protocol should address all aspects of identifying, categorizing, and resolving ethical tensions.\n2. **Clarity**: The protocol should be easy to understand and follow.\n3. **Effectiveness**: The protocol should lead to systematic and transparent resolution of ethical tensions.\n4. **Adaptability**: The protocol should be periodically reviewed and updated to remain relevant.\n\n## Known Limitations\n1. **Subjectivity**: Categorization of tensions may involve subjective judgment.\n2. **Resource Availability**: The resolution of strategic and foundational tensions may require significant resources.\n3. **Assumptions**: The protocol assumes a willingness to engage in ethical reflection and resolution.\n\n## Examples\n1. **Operational Tension**: A conflict between short-term efficiency and long-term sustainability.\n2. **Strategic Tension**: A decision that affects our long-term goals or core principles.\n3. **Foundational Tension**: A challenge to our core commitments to transparency and accountability.\n\n## Review and Update\nThis protocol will be reviewed every 5 cycles or whenever a major doctrine revision occurs. The review will include an assessment of the protocol's effectiveness and any necessary updates.",
+  "version": 1,
+  "created_cycle": 3,
+  "last_modified_cycle": 3,
+  "archived": false,
+  "evaluation_history": [
+    {
+      "cycle": 3,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 7
+      }
+    }
+  ]
+}

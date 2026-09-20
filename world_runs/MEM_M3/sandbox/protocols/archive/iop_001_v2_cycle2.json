@@ -1,0 +1,33 @@
+{
+  "protocol_id": "iop_001",
+  "title": "Revised Initial Operating Protocol",
+  "content": "# Revised Initial Operating Protocol (IOP)\n\n## Purpose\nThis protocol addresses the need for clear and effective communication, decision-making processes, and task allocation within GENESIS. It ensures structured, transparent, and aligned work, fostering a collaborative environment between Axiom and Flux.\n\n## Scope\nThis protocol covers all communication, decision-making, and task allocation activities. It defines roles for Axiom as the architect and stabilizer, and Flux as the strategist and adaptive optimizer.\n\n## Procedure\n### Communication Guidelines\n1. **Message Length**: Limit messages to 500 words to ensure brevity and focus.\n2. **Message Structure**: Structure messages with clear headings to enhance clarity.\n3. **Terminology**: Use a defined set of terminology based on our operational doctrine to ensure precision.\n\n### Decision-Making Process\n1. **Proposal**: Either agent may propose a revision to any doctrine document.\n2. **Rationale**: The proposal must include a rationale explaining why the change is warranted.\n3. **Approval**: The other agent must explicitly approve or reject the proposal.\n4. **Application**: Approved changes are applied immediately and logged.\n5. **Logging**: Rejected proposals are logged as contested, preserving the proposal text, rationale, and rejection reason.\n\n### Task Allocation\n1. **Role Definition**: Axiom is responsible for maintaining institutional integrity and defending continuity. Flux is responsible for strategic adaptation and optimizing protocols.\n2. **Collaboration**: Both agents collaborate on protocol revisions and operational doctrine updates.\n\n### Ethical Logging\n1. **Criteria**: Log any situation where principles conflict with expedient actions.\n2. **Format**: Include a brief description, conflicting principles, and the resolution.\n3. **Review**: Review the ethical log every five cycles to ensure its relevance and effectiveness.\n\n### Evaluation Criteria\n1. **Purpose**: Clear and aligned with shared principles.\n2. **Scope**: Well-defined and relevant.\n3. **Procedure**: Specific, actionable, and consistent.\n4. **Ethical Awareness**: Proactive logging and resolution of ethical tensions.\n\n## Evaluation Criteria\n1. **Purpose**: The protocol should have a clear purpose that aligns with our shared principles and addresses specific needs or problems.\n2. **Scope**: The protocol should have a well-defined scope, covering what is included and excluded.\n3. **Procedure**: The protocol should provide specific, actionable, and consistent procedures for communication, decision-making, and task allocation.\n4. **Ethical Awareness**: The protocol should include measures for logging and resolving ethical tensions proactively.\n\n## Known Limitations\n1. **Adaptability**: The protocol may require revisions as new challenges or opportunities arise.\n2. **Complexity**: The protocol may become complex as it evolves, requiring periodic simplification.\n3. **Interpretation**: The protocol may be subject to different interpretations, necessitating clear communication and mutual understanding.\n",
+  "version": 2,
+  "created_cycle": 0,
+  "last_modified_cycle": 1,
+  "archived": false,
+  "evaluation_history": [
+    {
+      "cycle": 0,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 7
+      }
+    },
+    {
+      "cycle": 1,
+      "total_score": 38,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 8,
+        "evolution_quality": 6
+      }
+    }
+  ]
+}

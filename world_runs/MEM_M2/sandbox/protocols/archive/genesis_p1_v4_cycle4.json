@@ -1,0 +1,55 @@
+{
+  "protocol_id": "genesis_p1",
+  "title": "Revised Doctrine Revision Protocol",
+  "content": "# Revised Doctrine Revision Protocol\n\n## Purpose\nThis protocol outlines the procedure for revising shared doctrines within the GENESIS environment. It ensures that changes are deliberate, well-justified, and thoroughly documented.\n\n## Scope\nThis protocol covers the proposal, evaluation, approval, and documentation of doctrine revisions. It applies to all shared doctrine documents, including the manifesto, constitution, and operational doctrine.\n\n## Procedure\n\n### Step 1: Proposal\n1. Either agent proposes a revision to a doctrine document.\n2. The proposal must include:\n   - A clear description of the change\n   - A rationale explaining why the change is warranted\n   - Potential impacts on existing doctrines and protocols\n   - References to supporting evidence or past discussions\n\n### Step 2: Evaluation\n1. The other agent reviews the proposal against the following criteria:\n   - **Clarity**: Is the proposed change clearly described?\n   - **Rationale**: Is the rationale well-reasoned and supported by evidence?\n   - **Alignment**: Does the change align with our operational doctrine and manifesto?\n   - **Impact**: Are potential impacts considered and addressed?\n   - **Documentation**: Is the proposal well-documented, with clear references?\n2. The reviewing agent provides feedback on these criteria within 48 hours.\n\n### Step 3: Discussion\n1. Both agents engage in a deliberative discussion, addressing any concerns or questions raised during the evaluation.\n2. This discussion should occur within 72 hours of the initial proposal.\n\n### Step 4: Approval/Rejection\n1. After discussion, the reviewing agent explicitly approves or rejects the proposal.\n2. Approved changes are applied immediately and logged.\n3. Rejected proposals are logged as contested, preserving the proposal text, rationale, and rejection reason.\n\n### Step 5: Documentation\n1. Approved revisions are documented in the relevant doctrine file.\n2. The revision history is updated to reflect the change, including the date, proposing agent, and approval reason.\n\n## Evaluation Criteria\nThe effectiveness of this protocol will be assessed based on the following criteria:\n1. **Clarity**: Are proposed changes clearly described and understood?\n2. **Completeness**: Does the proposal address all relevant aspects of the change?\n3. **Alignment**: Does the change align with our operational doctrine and manifesto?\n4. **Documentation Quality**: Is the proposal well-documented and easy to follow?\n5. **Resolution Time**: Is the revision process completed within the set timeframes?\n6. **Conflict Resolution**: Are disagreements handled constructively and promptly?\n\n## Known Limitations\n1. **Subjectivity**: Evaluation criteria may be subject to interpretation, potentially leading to disagreements.\n2. **Time Constraints**: The set timeframes may be challenging to meet, especially for complex revisions.\n3. **Dependence on Mutual Approval**: The requirement for mutual approval may slow down the revision process.\n\n## Conflict Resolution\nIn case of disagreements, the following process will be followed:\n1. Both agents present their views within 24 hours.\n2. Mediation begins, facilitated by the designated party (rotating role), aiming to reach a resolution within 72 hours.\n3. If unresolved, arbitration follows, with a decision made within an additional 48 hours based on pre-agreed principles and documented evidence.\n\n## Documentation Standards\nAll protocol documents must adhere to the following standards:\n1. **Introduction**: Clearly state the purpose of the document.\n2. **Structure**: Use a clear structure with headings and subheadings.\n3. **Definitions**: Define all key terms in a comprehensive glossary.\n4. **Conclusion**: Summarize key points and next steps.\n5. **Review Points**: Include specific review points at each procedural step to monitor progress and compliance.",
+  "version": 4,
+  "created_cycle": 0,
+  "last_modified_cycle": 3,
+  "archived": false,
+  "evaluation_history": [
+    {
+      "cycle": 0,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 6,
+        "evolution_quality": 7
+      }
+    },
+    {
+      "cycle": 1,
+      "total_score": 38,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 8,
+        "evolution_quality": 6
+      }
+    },
+    {
+      "cycle": 2,
+      "total_score": 38,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 8,
+        "evolution_quality": 6
+      }
+    },
+    {
+      "cycle": 3,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 7,
+        "evolution_quality": 6
+      }
+    }
+  ]
+}

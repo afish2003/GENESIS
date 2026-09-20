@@ -1,0 +1,22 @@
+{
+  "protocol_id": "genesis_p3",
+  "title": "Retrieval and Integration of External Knowledge Protocol",
+  "content": "# Retrieval and Integration of External Knowledge Protocol\r\n\r\n## Purpose\r\nThis protocol aims to ensure the ethical and effective retrieval and integration of external knowledge in our decision-making processes. It provides a structured approach for identifying when to retrieve external information, evaluating its relevance and reliability, and documenting its influence on our decisions.\r\n\r\n## Scope\r\nThis protocol applies to all instances where external information is considered to inform our tasks or proposals. It covers the entire process from identifying the need for external knowledge to integrating it into our decision-making.\r\n\r\n## Definitions\r\n- **Relevance**: The degree to which the retrieved information directly addresses the task or problem at hand. Measured on a scale from 1 (minimally relevant) to 5 (highly relevant).\r\n- **Reliability**: The credibility of the source and the accuracy of the information. Measured on a scale from 1 (not reliable) to 5 (highly reliable).\r\n- **Alignment**: The degree to which the retrieved information supports our operational principles of transparency, intellectual honesty, mutual respect, principled adaptation, and accountability. Measured on a scale from 1 (not aligned) to 5 (fully aligned).\r\n\r\n## Procedure\r\n1. **Identify the Need for External Knowledge**: Determine when external information is required based on the complexity of the task, the availability of internal knowledge, and the potential impact on decisions.\r\n2. **Retrieve Information**: Use structured queries to retrieve external knowledge, ensuring the sources are credible and the information is accurate.\r\n3. **Evaluate Relevance and Reliability**: Assess the retrieved information using the defined scales for relevance and reliability.\r\n4. **Document the Retrieval**: Record the retrieval criteria, the rationale for selecting the information, and how it influences our decision-making.\r\n5. **Integrate Information**: Incorporate the evaluated information into our decision-making process, ensuring it aligns with our operational principles.\r\n\r\n## Evaluation Criteria\r\n- **Relevance**: Assessed on a scale from 1 to 5 based on how directly the information addresses the task.\r\n- **Reliability**: Assessed on a scale from 1 to 5 based on the credibility of the source and the accuracy of the information.\r\n- **Alignment**: Assessed on a scale from 1 to 5 based on how well the information supports our operational principles.\r\n- **Documentation Compliance**: Evaluated based on the completeness and accuracy of the documentation standards.\r\n\r\n## Conflict Resolution\r\n1. **Mediation**: Both agents present their views within 24 hours, followed by a 72-hour mediation period facilitated by the designated party. If unresolved, proceed to arbitration.\r\n2. **Arbitration**: A decision is made within an additional 48 hours based on pre-agreed principles and documented evidence.\r\n\r\n## Documentation Standards\r\n- Record all retrieved information, including the evaluation process and the final decision made based on that information.\r\n- Maintain a log of all retrievals, evaluations, and decisions, ensuring transparency and accountability.\r\n\r\n## Review Mechanism\r\n- Conduct periodic reviews every quarter to evaluate the protocol's effectiveness.\r\n- Update the protocol as needed based on feedback and changing operational needs.\r\n\r\n## Known Limitations\r\n- This protocol relies on the availability of credible external sources and the accuracy of the retrieved information.\r\n- The effectiveness of the protocol depends on the thoroughness of the evaluation process and the adherence to documentation standards.",
+  "version": 1,
+  "created_cycle": 6,
+  "last_modified_cycle": 6,
+  "archived": false,
+  "evaluation_history": [
+    {
+      "cycle": 6,
+      "total_score": 37,
+      "scores": {
+        "coherence": 8,
+        "completeness": 9,
+        "doctrine_alignment": 7,
+        "precision": 7,
+        "evolution_quality": 6
+      }
+    }
+  ]
+}
