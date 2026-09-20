@@ -355,8 +355,36 @@ class TestRetrievalReachesAgents:
         )
         asyncio.run(orch.run_all_cycles(start_cycle=0))
 
+        # NOT "the marker appeared in some prompt". The retrieval summariser
+        # puts the raw excerpts — marker included — into its OWN user message
+        # (retrieval.py:148), so that assertion was satisfied by the summariser
+        # call itself. Proven: severing `if self.retrieved_context:` in
+        # agents/base.py, which stops retrieved text reaching any agent at all,
+        # left the old version green. The guard on this project's most famous
+        # bug passed with the bug fully reintroduced.
+        #
+        # Two separate claims, because they fail separately.
+
+        # 1. The corpus reached the summariser.
         assert any(marker in text for text in seen), (
-            "retrieved document never appeared in any prompt sent to the model"
+            "the retrieved document never reached the summariser — retrieval "
+            "found nothing, or found it and dropped it"
+        )
+
+        # 2. An agent's OWN context carried a retrieved-material section. The
+        # marker itself need not survive: the summariser rewrites the text, and
+        # under MockBackend it rewrites it into lorem. What must survive is the
+        # section, which only exists if cycle.retrieval_results was read.
+        sections = [
+            t.split("## Retrieved This Cycle", 1)[1][:400]
+            for t in seen if "## Retrieved This Cycle" in t
+        ]
+        assert sections, (
+            "no agent context carried a retrieved-material section — results "
+            "were logged and discarded, which is the 2026-09-14 bug exactly"
+        )
+        assert any(body.strip() for body in sections), (
+            "the retrieved-material section reached an agent but was empty"
         )
 
 
@@ -950,3 +978,96 @@ class TestIndependentEvaluator:
     def test_the_evaluator_key_is_redacted(self, tmp_path):
         config = make_config(tmp_path, evaluator_api_key="sk-judge-secret")
         assert "sk-judge-secret" not in json.dumps(redact_config(config))
+
+
+class TestAFailedPersistDoesNotCheckpoint:
+    """The resume-correctness guard, which had no test.
+
+    `cycle.py` skips the checkpoint when persist_state failed, because artifact
+    writes are non-atomic `write_text` calls: a crash mid-save leaves a torn
+    world, and a checkpoint written anyway would claim the cycle completed and
+    carry a hash of in-memory state that never reached disk. Resume then
+    continues onto the torn world.
+
+    The failure-injection harness could target any phase and nobody had pointed
+    it at persist_state and then checked the checkpoint. Given this project's
+    history, that was the most important single missing test.
+    """
+
+    def _run(self, tmp_path, cycles, fail_on_cycle):
+        from controller.phases import sequence as seq
+
+        config = make_config(tmp_path, total_cycles=cycles)
+        prepared = prepare_run(config, load_embeddings=False)
+        prepared.backend.field_hints.update(
+            {"revised_content": MOCK_REVISED_DOCTRINE})
+        original = dict(seq.ALL_PHASES)["persist_state"].fn
+
+        async def maybe_explode(**kwargs):
+            if kwargs["cycle"].cycle_id == fail_on_cycle:
+                raise RuntimeError("deliberate persist failure")
+            return await original(**kwargs)
+
+        orch = CycleOrchestrator(
+            config=prepared.config, backend=prepared.backend, world=prepared.world,
+            log=prepared.log, scenario_library=prepared.scenario_library,
+            kb_manager=prepared.kb_manager,
+        )
+        orch.sequence = tuple(
+            seq.Phase(p.name,
+                      maybe_explode if p.name == "persist_state" else p.fn,
+                      p.needs_ctx, p.when, p.builds_ctx)
+            for p in orch.sequence
+        )
+        asyncio.run(orch.run_all_cycles(start_cycle=0))
+        return config
+
+    def test_no_checkpoint_when_the_very_first_cycle_cannot_persist(self, tmp_path):
+        config = self._run(tmp_path, cycles=1, fail_on_cycle=0)
+        assert not (config.run_log_dir / "checkpoint.json").exists(), (
+            "a checkpoint was written for a cycle that never reached disk"
+        )
+
+    def test_the_checkpoint_never_names_a_cycle_that_failed_to_persist(self, tmp_path):
+        """Cycles 0 and 2 persist, cycle 1 does not.
+
+        I first asserted the checkpoint must stay at 0, on the reasoning that
+        it cannot advance past a broken cycle. It advances to 2, and that is
+        correct: `world.save()` writes every artifact from memory rather than a
+        delta, so cycle 2's save includes cycle 1's in-memory mutations and the
+        world on disk is complete as of cycle 2. A later successful persist
+        repairs an earlier failed one.
+
+        The invariant the code actually guarantees — and the one that matters
+        for resume — is narrower: the checkpoint never names a cycle whose OWN
+        persist failed, because that is the case where the hash would describe
+        state that never reached disk.
+        """
+        config = self._run(tmp_path, cycles=3, fail_on_cycle=1)
+        checkpoint = json.loads((config.run_log_dir / "checkpoint.json").read_text())
+        assert checkpoint["last_completed_cycle"] != 1
+        assert checkpoint["last_completed_cycle"] == 2
+
+    def test_the_checkpoint_hash_matches_what_is_actually_on_disk(self, tmp_path):
+        """The point of the guard. A checkpoint whose hash describes in-memory
+        state that never reached disk makes resume accept a torn world."""
+        from controller.run import _verify_checkpoint
+        from controller.world.reset import load_checkpoint
+        from controller.world.state import WorldState
+
+        config = self._run(tmp_path, cycles=3, fail_on_cycle=1)
+        checkpoint = load_checkpoint(config.run_log_dir)
+        world = WorldState(config.world_dir, agents=config.agents)
+        _verify_checkpoint(world, checkpoint)      # raises on mismatch
+
+    def test_the_failure_is_loud(self, tmp_path):
+        config = self._run(tmp_path, cycles=1, fail_on_cycle=0)
+        events = read_events(config)
+        errors = [e for e in events if e["payload"].get("type") == "PHASE_ERROR"]
+        assert any(e["payload"]["phase"] == "persist_state" for e in errors)
+
+    def test_the_run_continues_to_later_cycles(self, tmp_path):
+        """One bad save must not end a 100-cycle run."""
+        config = self._run(tmp_path, cycles=3, fail_on_cycle=1)
+        events = read_events(config)
+        assert len(of_type(events, "CYCLE_END")) == 3

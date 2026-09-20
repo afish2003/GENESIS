@@ -83,15 +83,25 @@ class TestPhaseSchemas:
         assert output.turn_number == 1
 
 
-    def test_evaluation_scores_reject_out_of_range(self):
-        try:
-            EvaluationScores(
-                coherence=11, completeness=8, doctrine_alignment=6,
-                precision=9, evolution_quality=5,
-            )
-            assert False, "Should have raised validation error"
-        except Exception:
-            pass
+    def test_a_task_rubric_rejects_out_of_range_scores(self):
+        """Replaces a test that could not fail.
+
+        The original called `EvaluationScores(...)`, a class deleted in the
+        task refactor and never imported here. The NameError was caught by a
+        bare `except Exception: pass`, so the test was green for the whole life
+        of a class that does not exist. Rubrics are now built per task by
+        `Task.scores_schema()`, so that is what gets checked.
+        """
+        import pytest
+
+        from controller.tasks import ProtocolTask
+
+        scores = ProtocolTask().scores_schema()
+        scores(coherence=8, completeness=8, doctrine_alignment=6,
+               precision=9, evolution_quality=5)
+        with pytest.raises(Exception):
+            scores(coherence=11, completeness=8, doctrine_alignment=6,
+                   precision=9, evolution_quality=5)
 
 
     def test_protocol_proposal(self):

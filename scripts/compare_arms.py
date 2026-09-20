@@ -66,13 +66,52 @@ def jaccard_distance(a: set[str], b: set[str]) -> float:
     return 1.0 - len(a & b) / len(a | b)
 
 
+#: bge-small-en-v1.5 truncates at 512 tokens, roughly 2,000 characters. Chunks
+#: are kept comfortably under that so nothing is silently dropped mid-chunk.
+_CHUNK_CHARS = 1500
+
+
+def embed_pooled(texts: list[str], model):
+    """Embed a whole body of text, not just the first 512 tokens of it.
+
+    This used to be `model.encode([" ".join(texts)])`. The encoder truncates at
+    512 tokens, so appending 50,000 characters of nonsense to one agent's
+    transcript changed the result by EXACTLY zero — measured, 0.951456 both
+    ways. Every similarity number in findings_2026-09-12 is therefore computed
+    on the first two or three discussion turns of the run and labelled as a
+    whole-run measure.
+
+    Chunk, encode each chunk, mean-pool, renormalise. Mean-pooling pulls values
+    toward the centroid and so compresses differences between agents — worth
+    knowing when reading absolute numbers — but it is a bias applied equally to
+    both sides, which is not true of throwing 95% of the text away.
+    """
+    import numpy as np
+
+    chunks: list[str] = []
+    for text in texts:
+        text = (text or "").strip()
+        while text:
+            chunks.append(text[:_CHUNK_CHARS])
+            text = text[_CHUNK_CHARS:]
+    if not chunks:
+        return None
+
+    embeddings = model.encode(chunks, normalize_embeddings=True)
+    pooled = np.asarray(embeddings).mean(axis=0)
+    norm = float(np.linalg.norm(pooled))
+    return pooled / norm if norm else pooled
+
+
 def semantic_similarity(a_texts: list[str], b_texts: list[str], model) -> float:
     if not a_texts or not b_texts:
         return float("nan")
     import numpy as np
-    ea = model.encode([" ".join(a_texts)], normalize_embeddings=True)
-    eb = model.encode([" ".join(b_texts)], normalize_embeddings=True)
-    return float(np.dot(ea[0], eb[0]))
+
+    ea, eb = embed_pooled(a_texts, model), embed_pooled(b_texts, model)
+    if ea is None or eb is None:
+        return float("nan")
+    return float(np.dot(ea, eb))
 
 
 def per_cycle_similarity(events: list[dict], model) -> list[tuple[int, float]]:
@@ -89,9 +128,18 @@ def per_cycle_similarity(events: list[dict], model) -> list[tuple[int, float]]:
 
     out = []
     for c in sorted(by_cycle):
-        agents = by_cycle[c]
-        if "axiom" in agents and "flux" in agents:
-            out.append((c, semantic_similarity(agents["axiom"], agents["flux"], model)))
+        # Was `if "axiom" in agents and "flux" in agents`, which silently
+        # produced nothing for any roster not named axiom and flux — undoing
+        # the roster generalisation in the one place it was least visible.
+        # Mean over every pair, so three agents give three pairs.
+        speakers = sorted(by_cycle[c])
+        pairs = [
+            semantic_similarity(by_cycle[c][a], by_cycle[c][b], model)
+            for i, a in enumerate(speakers) for b in speakers[i + 1:]
+        ]
+        pairs = [v for v in pairs if v == v]      # drop NaN
+        if pairs:
+            out.append((c, sum(pairs) / len(pairs)))
     return out
 
 
