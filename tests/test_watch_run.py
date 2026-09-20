@@ -24,7 +24,23 @@ def render(events: list[dict], full: bool = False, capsys=None) -> str:
     return capsys.readouterr().out
 
 
+#: Keys an event envelope actually has. `base.update(kw)` used to accept
+#: anything, so `ev(..., agent="axiom")` — a plausible typo for `agent_id` —
+#: added a junk key and left agent_id None. Several tests looked like they
+#: exercised per-agent rendering and silently did not.
+_EVENT_KEYS = {"event_type", "cycle_id", "agent_id", "payload", "timestamp"}
+
+
 def ev(event_type: str, payload: dict | None = None, **kw) -> dict:
+    if "agent" in kw:
+        kw["agent_id"] = kw.pop("agent")
+    unknown = set(kw) - _EVENT_KEYS
+    if unknown:
+        raise TypeError(
+            f"ev() got unexpected event field(s) {sorted(unknown)}; an event "
+            f"envelope has {sorted(_EVENT_KEYS)}. A misspelled field would "
+            f"otherwise be silently ignored and the test would assert nothing."
+        )
     base = {"event_type": event_type, "cycle_id": 0, "agent_id": None,
             "payload": payload or {}, "timestamp": "2026-09-14T00:00:00Z"}
     base.update(kw)
