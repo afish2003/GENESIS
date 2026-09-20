@@ -23,6 +23,7 @@ def create_backend(config: RunConfig) -> InferenceBackend:
             model=config.model_name,
             timeout=config.request_timeout,
             max_output_tokens=config.max_output_tokens,
+            enable_thinking=config.enable_thinking,
         )
 
     if kind == Backend.OPENAI:
@@ -41,6 +42,7 @@ def create_backend(config: RunConfig) -> InferenceBackend:
             timeout=config.request_timeout,
             json_mode=config.api_json_mode,
             max_output_tokens=config.max_output_tokens,
+            enable_thinking=config.enable_thinking,
         )
 
     if kind == Backend.MOCK:

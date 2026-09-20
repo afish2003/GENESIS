@@ -160,6 +160,17 @@ class RunConfig(BaseModel):
         "this is safe to leave on.",
     )
     request_timeout: float = Field(default=600.0, description="Per-request timeout, seconds")
+    enable_thinking: bool = Field(
+        default=False,
+        description="Let a reasoning model emit a thinking trace before its "
+                    "answer. OFF by default, and the difference is not small: "
+                    "qwen3.6-35b-a3b spent 1500 tokens thinking and returned an "
+                    "EMPTY content field, 6.4s; with thinking off the same call "
+                    "took 0.5s and 27 tokens. max_tokens counts thinking, so a "
+                    "reasoning model truncates mid-thought and returns nothing "
+                    "parseable. Turn it on only if you want the trace, and raise "
+                    "max_output_tokens well above 4096 when you do.",
+    )
     max_output_tokens: int = Field(
         default=4096,
         description="Cap on tokens generated per call. No cap was ever sent, so "
@@ -514,6 +525,7 @@ def load_config(
         "API_JSON_MODE": "api_json_mode",
         "REQUEST_TIMEOUT": "request_timeout",
         "MAX_OUTPUT_TOKENS": "max_output_tokens",
+        "ENABLE_THINKING": "enable_thinking",
         "EVALUATOR_MODEL": "evaluator_model",
         "EVALUATOR_API_BASE_URL": "evaluator_api_base_url",
         "EVALUATOR_API_KEY": "evaluator_api_key",

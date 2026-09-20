@@ -283,3 +283,92 @@ class TestOutputIsCapped:
             asyncio.run(b.complete([Message(role="user", content="u")]))
         assert not [r for r in caplog.records if "cap" in r.message.lower()]
         asyncio.run(b.close())
+
+
+class TestThinkingToggle:
+    """Reasoning models put their chain in reasoning_content, and max_tokens
+    counts it.
+
+    qwen3.6-35b-a3b spent an entire 1500-token budget thinking and returned
+    content="" with finish_reason "length". Every "unbounded generation", the
+    19-minute hang, and every truncated parse failure traced back to this. The
+    same call with thinking off took 0.5s and 27 tokens.
+    """
+
+    def _body(self, handler_result=None, **kw):
+        seen = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen["body"] = json.loads(request.content)
+            return handler_result or httpx.Response(200, json=_chat_response())
+
+        b = _backend_with(handler, **kw)
+        asyncio.run(b.complete([Message(role="user", content="u")]))
+        asyncio.run(b.close())
+        return seen["body"]
+
+    def test_thinking_is_disabled_by_default(self):
+        body = self._body()
+        assert body["chat_template_kwargs"] == {"enable_thinking": False}
+
+    def test_nothing_is_sent_when_thinking_is_wanted(self):
+        """Opting in means letting the model's own default apply."""
+        assert "chat_template_kwargs" not in self._body(enable_thinking=True)
+
+    def test_config_default_is_off(self):
+        assert RunConfig(run_id="T", condition="BASELINE").enable_thinking is False
+
+    @pytest.mark.parametrize("body_text", [
+        "unknown field chat_template_kwargs", "enable_thinking is not supported"])
+    def test_an_endpoint_rejecting_the_extension_is_recognised(self, body_text):
+        req = httpx.Request("POST", "http://x/v1/chat/completions")
+        err = httpx.HTTPStatusError(
+            "x", request=req, response=httpx.Response(400, text=body_text, request=req))
+        assert OpenAICompatBackend._is_template_kwargs_rejection(err) is True
+
+    def test_an_unrelated_400_is_not_mistaken_for_one(self):
+        """An over-broad version retried EVERY 400 with the parameter stripped,
+        which test_4xx_not_retried caught."""
+        req = httpx.Request("POST", "http://x/v1/chat/completions")
+        err = httpx.HTTPStatusError(
+            "x", request=req,
+            response=httpx.Response(400, text="model 'nope' not found", request=req))
+        assert OpenAICompatBackend._is_template_kwargs_rejection(err) is False
+
+    def test_a_rejecting_endpoint_is_retried_once_without_it(self):
+        calls = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = json.loads(request.content)
+            calls.append("chat_template_kwargs" in body)
+            if calls[-1]:
+                return httpx.Response(400, text="unknown field chat_template_kwargs")
+            return httpx.Response(200, json=_chat_response())
+
+        b = _backend_with(handler)
+        asyncio.run(b.complete([Message(role="user", content="u")]))
+        assert calls == [True, False]
+        assert b._thinking_toggle_supported is False
+        # And not sent again for the rest of the run.
+        asyncio.run(b.complete([Message(role="user", content="u")]))
+        assert calls == [True, False, False]
+        asyncio.run(b.close())
+
+    def test_truncation_naming_thinking_when_that_is_the_cause(self, caplog):
+        import logging
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = _chat_response()
+            body["choices"][0]["finish_reason"] = "length"
+            body["choices"][0]["message"]["reasoning_content"] = "thought " * 500
+            body["choices"][0]["message"]["content"] = ""
+            return httpx.Response(200, json=body)
+
+        b = _backend_with(handler)
+        with caplog.at_level(logging.WARNING):
+            asyncio.run(b.complete([Message(role="user", content="u")]))
+        assert any("THINKING" in r.message for r in caplog.records), (
+            "a truncation caused by thinking must say so — the fix is to turn "
+            "thinking off, not to raise the cap"
+        )
+        asyncio.run(b.close())

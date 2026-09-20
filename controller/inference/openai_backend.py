@@ -59,6 +59,7 @@ class OpenAICompatBackend(InferenceBackend):
         api_key: Optional[str] = None,
         timeout: float = 600.0,
         max_output_tokens: int = 4096,
+        enable_thinking: bool = False,
         json_mode: bool = False,
         extra_headers: Optional[dict[str, str]] = None,
     ) -> None:
@@ -76,6 +77,11 @@ class OpenAICompatBackend(InferenceBackend):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.max_output_tokens = max_output_tokens
+        self.enable_thinking = enable_thinking
+        #: Cleared the first time an endpoint rejects the vLLM
+        #: chat_template_kwargs extension, so one 400 costs one
+        #: extra request rather than one per call.
+        self._thinking_toggle_supported = True
         self.api_key = api_key or None
         self.json_mode = json_mode
         #: Cleared permanently the first time the endpoint rejects
@@ -116,6 +122,13 @@ class OpenAICompatBackend(InferenceBackend):
             # response then surfaces as an unexplained parse failure.
             "max_tokens": self.max_output_tokens,
         }
+        # Reasoning models put their chain in `reasoning_content` and the answer
+        # in `content`, and max_tokens counts BOTH. qwen3.6-35b-a3b spent an
+        # entire 1500-token budget thinking and returned content="" — every
+        # "unbounded generation" and every truncated parse failure traced back
+        # to this. Turning it off took the same call from 6.4s to 0.5s.
+        if not self.enable_thinking and self._thinking_toggle_supported:
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
         # Only when the CALLER wants JSON. `self.json_mode` used to be OR'd in
         # here, which applied response_format to every call the backend made —
         # including retrieval's prose summariser, which then returned "{}".
@@ -140,6 +153,21 @@ class OpenAICompatBackend(InferenceBackend):
             # parseable JSON at all. An endpoint that rejects it must degrade to
             # unconstrained decoding rather than failing the run — the results
             # are worse, not absent, and the warning says which.
+            if (self._thinking_toggle_supported
+                    and "chat_template_kwargs" in payload
+                    and self._is_template_kwargs_rejection(e)):
+                # Endpoints other than vLLM reject the extension. Drop it for
+                # the run rather than failing: a non-reasoning model does not
+                # need it anyway.
+                self._thinking_toggle_supported = False
+                logger.warning(
+                    "%s rejected chat_template_kwargs; not sending it again. "
+                    "If the model is a reasoning model its thinking tokens will "
+                    "count against max_output_tokens.", self.base_url,
+                )
+                payload.pop("chat_template_kwargs", None)
+                response = await self._request_with_retry(payload)
+                return self._build_result(response)
             if not (want_json and self._is_response_format_rejection(e)):
                 raise
             self._json_mode_supported = False
@@ -151,25 +179,35 @@ class OpenAICompatBackend(InferenceBackend):
             )
             payload.pop("response_format", None)
             response = await self._request_with_retry(payload)
-        data = response.json()
 
+        return self._build_result(response)
+
+    def _build_result(self, response: httpx.Response) -> InferenceResult:
+        """Parse one completion response into an InferenceResult."""
+        data = response.json()
         choices = data.get("choices") or []
         if not choices:
             raise ValueError(
                 f"No choices in response from {self.base_url}: {str(data)[:200]}"
             )
-        content = (choices[0].get("message") or {}).get("content") or ""
-
+        message = choices[0].get("message") or {}
+        content = message.get("content") or ""
         usage = data.get("usage") or {}
 
         # Hitting the cap means the response is cut mid-token-stream, so a
-        # structured call will fail to parse for a reason that looks like the
-        # model being bad at JSON. Say which it is.
+        # structured call fails to parse for a reason that looks like the model
+        # being bad at JSON. Say which it is — they need opposite fixes.
         if (choices[0].get("finish_reason") or "") == "length":
+            reasoning = len(message.get("reasoning_content") or "")
             logger.warning(
-                "Response hit the %d-token output cap and was truncated. "
-                "Structured output will not parse. Raise max_output_tokens if "
-                "this phase legitimately needs more.", self.max_output_tokens,
+                "Response hit the %d-token output cap and was truncated; "
+                "structured output will not parse.%s",
+                self.max_output_tokens,
+                (f" {reasoning} characters of it were THINKING tokens — this is "
+                 f"a reasoning model and enable_thinking is on. max_tokens "
+                 f"counts thinking, so the answer never got written."
+                 if reasoning else
+                 " Raise max_output_tokens if this phase needs more."),
             )
 
         return InferenceResult(
@@ -247,6 +285,20 @@ class OpenAICompatBackend(InferenceBackend):
             logger.debug("stream_sink raised; dropping it for this run",
                          exc_info=True)
             self.stream_sink = None
+
+    @staticmethod
+    def _is_template_kwargs_rejection(error: "httpx.HTTPStatusError") -> bool:
+        """Whether a 4xx is about chat_template_kwargs specifically.
+
+        Narrow on purpose, like the response_format check: an over-broad
+        version retried EVERY 400 with the parameter stripped, which the
+        existing test_4xx_not_retried caught immediately. A 400 for a bad model
+        name must not be mistaken for an unsupported extension.
+        """
+        if error.response.status_code not in (400, 404, 422, 501):
+            return False
+        body = (error.response.text or "").lower()
+        return "chat_template_kwargs" in body or "enable_thinking" in body
 
     @staticmethod
     def _is_response_format_rejection(error: "httpx.HTTPStatusError") -> bool:
