@@ -37,21 +37,62 @@ logger = logging.getLogger(__name__)
 _SECRET_FIELDS = ("api_key", "evaluator_api_key")
 
 
-def _provide(override: Optional[Path], dest: Path, render) -> Path:
+def _provide(override: Optional[Path], dest: Path, render,
+             src: Optional[Path] = None) -> Path:
     """Populate `dest` either by copying a verbatim override or by rendering.
 
     A researcher-supplied directory is copied, never rendered into and never
     deleted — `render_dir` starts with `shutil.rmtree(dest)`, which would
     otherwise destroy it.
+
+    An override SHADOWS the source, and it did so silently for six days.
+    `.env` carried `WORLD_TEMPLATE_DIR=./world_template` — the gitignored
+    build output — so every run copied a template last written on 14 September
+    and no edit to world_template_src reached a single one of them. The
+    manifesto fix, committed and tested the same day, never applied to the
+    battery it was made for. CLAUDE.md's guarantee that "the prompts a run
+    used are recorded by construction" was true of the recording and false of
+    the rendering.
+
+    So an override now announces itself at WARNING, and says so again, louder,
+    when it looks like a stale copy of the source it is shadowing.
     """
-    if override is not None:
-        if dest.exists():
-            shutil.rmtree(dest)
-        shutil.copytree(override, dest)
-        logger.info("Using %s verbatim -> %s", override, dest)
-    else:
+    if override is None:
         render(dest)
+        return dest
+
+    if dest.exists():
+        shutil.rmtree(dest)
+    shutil.copytree(override, dest)
+    logger.warning(
+        "Using %s VERBATIM -> %s. Edits to the rendered source will NOT "
+        "reach this run.", override, dest,
+    )
+    if src is not None:
+        stale = _stale_files(src, override)
+        if stale:
+            logger.warning(
+                "%s looks like a STALE build output of %s: %d file(s) older "
+                "than their source, including %s. Unset the override to "
+                "render from source instead.",
+                override, src, len(stale), ", ".join(sorted(stale)[:3]),
+            )
     return dest
+
+
+def _stale_files(src: Path, override: Path) -> list[str]:
+    """Names in `override` older than the same-named file under `src`."""
+    out = []
+    try:
+        for path in src.rglob("*"):
+            if not path.is_file():
+                continue
+            mirror = override / path.relative_to(src)
+            if mirror.is_file() and mirror.stat().st_mtime < path.stat().st_mtime:
+                out.append(str(path.relative_to(src)))
+    except OSError:
+        return []
+    return out
 
 
 class CheckpointMismatchError(RuntimeError):
@@ -124,9 +165,11 @@ def prepare_run(
     # concurrent arms overwrite each other and how a researcher's hand-written
     # prompt directory got deleted.
     _provide(config.prompts_dir, config.run_prompts_dir,
-             lambda dest: materialise_prompts(config, dest))
+             lambda dest: materialise_prompts(config, dest),
+             src=config.prompts_src_dir)
     _provide(config.world_template_dir, config.run_world_template_dir,
-             lambda dest: materialise_world_template(config, dest))
+             lambda dest: materialise_world_template(config, dest),
+             src=config.world_template_src_dir)
 
     start_cycle = 0
     checkpoint = None
