@@ -90,17 +90,42 @@ class KnowledgeBaseManager:
         #    which is unbounded. Sorting them together ranked by scale rather
         #    than relevance. Normalising per-KB before the merge makes the
         #    comparison meaningful.
-        merged: dict[str, RetrievalResultItem] = {}
+        per_kb: list[tuple[str, list[RetrievalResultItem], bool]] = []
         for name, index in self.indices.items():
             results = index.query(query_text)
-            if not results:
-                continue
-            top = max(r.score for r in results) or 1.0
-            for r in results:
-                normalised = r.model_copy(update={"score": r.score / top})
+            if results:
+                per_kb.append((name, results, index._embedder is not None))
+
+        if not per_kb:
+            return []
+
+        # Dividing every KB's scores by its own maximum made the top document
+        # of EVERY knowledge base score exactly 1.0. The merged ranking was
+        # then a set of ties broken by dict insertion order, so the top-k was
+        # structurally "one document per KB" regardless of relevance — which
+        # is also how contaminated self-history reached every agent's context.
+        #
+        # Reranked scores are cosines on a shared scale and need no
+        # normalisation at all. Only an index without an embedder returns raw
+        # BM25, which is unbounded and genuinely incomparable, so only those
+        # are rescaled — into the range the comparable scores occupy, rather
+        # than to 1.0.
+        comparable = [r for _, results, embedded in per_kb if embedded
+                      for r in results]
+        ceiling = min((r.score for r in comparable), default=1.0)
+
+        merged: dict[str, RetrievalResultItem] = {}
+        for name, results, embedded in per_kb:
+            if embedded:
+                scored = results
+            else:
+                top = max(r.score for r in results) or 1.0
+                scored = [r.model_copy(update={"score": r.score / top * ceiling})
+                          for r in results]
+            for r in scored:
                 previous = merged.get(r.doc_id)
-                if previous is None or normalised.score > previous.score:
-                    merged[r.doc_id] = normalised
+                if previous is None or r.score > previous.score:
+                    merged[r.doc_id] = r
 
         ranked = sorted(merged.values(), key=lambda r: r.score, reverse=True)
         return ranked[:self.rerank_top_k]

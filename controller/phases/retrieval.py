@@ -25,15 +25,39 @@ _logger = logging.getLogger(__name__)
 #: every subsequent call in the cycle.
 _MAX_RETRIEVED_CHARS = 4000
 
-RETRIEVAL_PROMPT = """Based on the current cycle's discussion and your priorities, you may now query the knowledge bases.
+#: What each knowledge base holds, for the agents. Only bases that are
+#: actually populated are shown: `technical` was advertised here for the
+#: whole of the project's history while the directory held zero documents, so
+#: every query aimed at it returned nothing and the agents had no way to know.
+KB_DESCRIPTIONS = {
+    "general": "philosophy, cognitive science, systems theory, decision theory",
+    "technical": "CS, systems design, protocol design, evaluation methodology",
+    "governance": "AI ethics frameworks, governance documents, alignment research",
+    "self_history": "your own past memory summaries, doctrine snapshots and "
+                    "protocol versions",
+}
+
+RETRIEVAL_PROMPT_HEAD = """Based on the current cycle's discussion and your priorities, you may now query the knowledge bases.
 
 Available knowledge bases:
-- General knowledge (philosophy, cognitive science, systems theory, decision theory)
-- Technical (CS, systems design, protocol design, evaluation methodology)
-- Governance and ethics (AI ethics frameworks, governance documents, alignment research)
-- Self-history (your own past memory summaries, doctrine snapshots, and protocol versions)
+{kb_list}
+"""
 
+RETRIEVAL_PROMPT_TAIL = """
 Formulate up to 3 specific, targeted queries. Each query should address a specific information need relevant to this cycle's work. If you do not need external knowledge this cycle, provide an empty query list."""
+
+
+def build_retrieval_prompt(kb_manager) -> str:
+    """Advertise only the knowledge bases that can actually answer."""
+    available = []
+    for name, description in KB_DESCRIPTIONS.items():
+        index = (kb_manager.indices.get(name) if kb_manager else None)
+        if index is not None and index.document_count > 0:
+            available.append(f"- {name} ({description})")
+    if not available:
+        available.append("- (none are populated this run)")
+    return (RETRIEVAL_PROMPT_HEAD.format(kb_list="\n".join(available))
+            + RETRIEVAL_PROMPT_TAIL)
 
 
 async def execute(
@@ -51,7 +75,8 @@ async def execute(
         ctx = contexts[agent_id]
         messages = [
             ctx.build_system_message(),
-            Message(role="user", content=RETRIEVAL_PROMPT),
+            Message(role="user",
+                    content=build_retrieval_prompt(cycle.kb_manager)),
         ]
 
         output = await backend.complete_structured(
