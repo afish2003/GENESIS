@@ -47,11 +47,15 @@ stream_live: true
 inference_backend: openai
 api_base_url: https://var-pve-01.tail699374.ts.net/v1
 
-# qwen3.6-35b-a3b-nvfp4 is ~3x faster and would make this much better to
-# watch, but it stopped serving completions on 2026-09-20 — still listed by
-# the gateway, every request hanging until timeout. Switch back when the 5090
-# is serving again.
-model_name: mistral-small-3.1-24b-w4a16
+# Back on qwen after the 5090 was restarted on 2026-09-20. Measured on the
+# restarted worker: 6,899 tokens in 28.2s, 245 tok/s, against Mistral's
+# 2.4-4.1 min/cycle. Speed is most of what makes a run watchable rather than
+# a thing you check on later.
+#
+# Its outage that day was NOT caused by the long generations this preset
+# produces — tested deliberately afterwards: a full 8192-token request
+# completed in 28s and the engine answered again 0.4s later.
+model_name: qwen3.6-35b-a3b-nvfp4
 evaluator_model: gemma3-27b-w4a16
 
 enable_thinking: false

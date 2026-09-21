@@ -36,15 +36,16 @@ execution_enabled: false
 
 inference_backend: openai
 api_base_url: https://var-pve-01.tail699374.ts.net/v1
-# qwen3.6-35b-a3b-nvfp4 stopped serving completions at 01:13 on 2026-09-20 —
-# it stayed in /models, answering 200 in 0.3s, while an 8-token request hung
-# until timeout. Agents moved to mistral-small-3.1-24b-w4a16, which was live
-# on the same gateway at the same moment, as was the judge.
+# Back on qwen after the 5090 was restarted. It had stopped serving at 01:13
+# on 2026-09-20 — still listed by the gateway, answering /models in 0.3s,
+# while an 8-token completion hung until timeout — and the 2026-09-20
+# battery ran on mistral-small-3.1-24b-w4a16 instead. So THAT battery is not
+# comparable to anything run on this config.
 #
-# So no result here is comparable to any qwen run. That costs nothing that
-# matters: no MEM_RESET data exists on any model, and BOTH arms run on the
-# same model, which is the only comparison this battery is making.
-model_name: mistral-small-3.1-24b-w4a16
+# Cause of the outage unknown. The obvious suspect was the 8192-token cap
+# raised three minutes earlier, and that was tested afterwards and cleared:
+# a full-budget generation completes in 28s and the engine survives it.
+model_name: qwen3.6-35b-a3b-nvfp4
 evaluator_model: gemma3-27b-w4a16
 
 # No live stream. Nobody is watching this one, and the streaming path costs
