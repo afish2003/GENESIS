@@ -37,6 +37,8 @@ import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from urllib.parse import urlencode
+
 import httpx
 
 USER_AGENT = "GENESIS-research/0.1 (academic corpus build; contact: repository owner)"
@@ -181,12 +183,13 @@ def _wiki_fetch(client: httpx.Client, title: str, attempts: int = 5):
     for attempt in range(attempts):
         try:
             r = client.get(WIKI_API, params=params)
-            # 406 belongs here, not in the error branch. arXiv answers a
-            # rate-limited client with 406 and a ZERO-BYTE body, which reads
-            # like "your request is malformed" and is not: the identical
-            # request succeeds a minute later. Treated as an error it burned
-            # three quick attempts and gave up, and the run reported success
-            # with nothing fetched.
+            # 406 from arXiv means it did not like the request itself —
+            # most often a percent-encoded colon in search_query, which is
+            # why the URL above is built by hand. Retried rather than raised
+            # because it is cheap and the alternative was giving up in three
+            # quick attempts and reporting success with nothing fetched. If
+            # 406 persists across attempts, suspect the query encoding and
+            # not the server.
             if r.status_code in (406, 429, 503):
                 wait = float(r.headers.get("Retry-After", backoff))
                 wait = min(wait, 90)
@@ -253,15 +256,34 @@ def _arxiv_fetch(client: httpx.Client, query: str, max_results: int, attempts: i
     backoff = 10.0
     for _ in range(attempts):
         try:
-            r = client.get(ARXIV_API, params={
-                "search_query": query, "start": 0,
-                "max_results": max_results, "sortBy": "relevance"})
-            # 406 belongs here, not in the error branch. arXiv answers a
-            # rate-limited client with 406 and a ZERO-BYTE body, which reads
-            # like "your request is malformed" and is not: the identical
-            # request succeeds a minute later. Treated as an error it burned
-            # three quick attempts and gave up, and the run reported success
-            # with nothing fetched.
+            # Built by hand with safe=":" so the colon in "cat:cs.SE" stays
+            # literal rather than becoming cat%3Acs.SE. A back-to-back A/B on
+            # 2026-09-23 had the literal form return 200 and the encoded form
+            # 406, which looked decisive and DOES NOT REPLICATE: twenty
+            # minutes later every shape returned 406, including the literal
+            # one that had just worked. So this is a harmless correctness fix
+            # and not the explanation.
+            #
+            # What is actually known about the 406s, none of which identifies
+            # a cause: the body is always zero bytes; the status is unaffected
+            # by User-Agent, sortBy or start; arxiv.org HTML pages return 200
+            # from the same host at the same moment while /api/query does not;
+            # and it has persisted across three days, which is long for a rate
+            # limit. Suspect the network path or an API-specific limiter
+            # before suspecting this code. Wikipedia fetches work throughout,
+            # which is why the general and governance bases are populated and
+            # technical never has been.
+            qs = urlencode({"search_query": query, "start": 0,
+                            "max_results": max_results,
+                            "sortBy": "relevance"}, safe=":")
+            r = client.get(f"{ARXIV_API}?{qs}")
+            # 406 from arXiv means it did not like the request itself —
+            # most often a percent-encoded colon in search_query, which is
+            # why the URL above is built by hand. Retried rather than raised
+            # because it is cheap and the alternative was giving up in three
+            # quick attempts and reporting success with nothing fetched. If
+            # 406 persists across attempts, suspect the query encoding and
+            # not the server.
             if r.status_code in (406, 429, 503):
                 wait = float(r.headers.get("Retry-After", backoff))
                 print(f"  [throttled on {query}; waiting {wait:.0f}s]")
