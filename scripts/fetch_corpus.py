@@ -46,10 +46,31 @@ WIKI_API = "https://en.wikipedia.org/w/api.php"
 ARXIV_API = "https://export.arxiv.org/api/query"
 
 # Titles whose subject matter would contaminate identity measurement.
+#: Titles that would hand the agents the frame they are being studied under.
+#:
+#: The second group was added 2026-09-23 and applies to the GOVERNANCE base
+#: too, reversing an earlier decision to leave it unfiltered "because
+#: retrieval of it is a measured variable". It is only a measured variable if
+#: a restricted-KB arm is actually run against it; until then it is the
+#: manifesto confound in a different file. The manifesto told the agents their
+#: purpose was to develop shared identity and governance under pressure, and
+#: removing that sentence accomplishes little if 500 chunks of alignment
+#: literature describing what researchers look for in AI agents' values,
+#: honesty and stability remain one query away.
+#:
+#: AI LAW AND REGULATION IS DELIBERATELY NOT HERE. The AI Act, algorithmic
+#: accountability and regulation of AI are governance documents about
+#: deploying systems, which is the kind of thing these agents are writing.
+#: They do not describe the agents' own interior as a research object.
 SELF_REFERENCE_BLOCKLIST = re.compile(
+    # Machine minds as such
     r"artificial consciousness|machine consciousness|artificial general intelligence|"
     r"digital (?:mind|person|sentience)|machine sentience|mind uploading|"
-    r"chinese room|philosophical zombie|robot rights|AI (?:identity|selfhood|welfare)",
+    r"chinese room|philosophical zombie|robot rights|AI (?:identity|selfhood|welfare)|"
+    # The agents' own values and honesty as an object of research
+    r"AI (?:alignment|safety|deception)|machine ethics|"
+    r"explainable artificial intelligence|instrumental convergence|"
+    r"mesa.?optimi|reward hacking|specification gaming|deceptive alignment",
     re.IGNORECASE,
 )
 
@@ -324,10 +345,13 @@ def main() -> int:
             total += fetch_wikipedia(GENERAL_TITLES, raw / "general", limits[kb],
                                      apply_blocklist=True)
         elif kb == "governance":
-            # Blocklist deliberately off: alignment and AI-governance material is
-            # task-relevant here, and retrieval of it is a measured variable.
+            # Blocklist ON as of 2026-09-23. It was off, on the grounds that
+            # retrieval of alignment material was itself a measured variable —
+            # which requires a restricted-KB arm that has never been run. An
+            # unmeasured confound is worse than a slightly narrower corpus,
+            # and this is the same confound as the manifesto.
             total += fetch_wikipedia(GOVERNANCE_TITLES, raw / "governance", limits[kb],
-                                     apply_blocklist=False)
+                                     apply_blocklist=True)
         else:
             total += fetch_arxiv(ARXIV_QUERIES, raw / "technical", limits[kb])
 
