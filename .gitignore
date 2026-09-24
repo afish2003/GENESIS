@@ -25,6 +25,12 @@ Thumbs.db
 
 # Project runtime artifacts
 /world/
+# Per-run worlds, from the 2026-09-20 change that stopped each run deleting
+# the last one's. /world/ was ignored and this replacement was not, so 145
+# files of run output were committed before anyone looked. The archive of what
+# a run produced is research_logs/<run>/ — artifacts and diffs, append-only.
+# This directory is working state.
+/world_runs/
 research_logs/
 knowledge_bases/self_history/
 
