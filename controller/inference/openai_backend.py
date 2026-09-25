@@ -305,7 +305,20 @@ class OpenAICompatBackend(InferenceBackend):
         still specific to this parameter: no other 400 this client can provoke
         mentions a chat template.
         """
-        if error.response.status_code not in (400, 404, 422, 501):
+        # 500 is in this list for a reason. A gateway that forwards to a
+        # backend whose client library has no such keyword raises rather than
+        # validating, and the gateway reports its own 500:
+        #
+        #   litellm.InternalServerError: AsyncCompletions.create() got an
+        #   unexpected keyword argument 'chat_template_kwargs'
+        #
+        # That is a caller error wearing a server error's status. Without 500
+        # here it is treated as transient, so the retry ladder sends the same
+        # unsupported parameter four more times and the phase fails — which
+        # made Qwen3.8-Flash-Next (llama.cpp behind LiteLLM) entirely
+        # unusable. The body check is what keeps this narrow: a genuine 500
+        # does not mention a chat template.
+        if error.response.status_code not in (400, 404, 422, 500, 501):
             return False
         body = (error.response.text or "").lower()
         return "chat_template" in body or "enable_thinking" in body
@@ -319,6 +332,12 @@ class OpenAICompatBackend(InferenceBackend):
         400 for a bad model name must not be mistaken for this and silently
         turn JSON mode off.
         """
+        # 500 is deliberately NOT here, unlike the chat_template check above.
+        # That one accepts 500 because a real endpoint was observed answering
+        # with one; for response_format there is no such observation, and
+        # test_a_server_error_is_not_mistaken_for_one exists to stop the
+        # symmetry argument being applied without evidence. A 500 that merely
+        # mentions response_format stays retryable.
         if error.response.status_code not in (400, 404, 422, 501):
             return False
         body = (error.response.text or "").lower()
@@ -352,6 +371,20 @@ class OpenAICompatBackend(InferenceBackend):
                                type(e).__name__, attempt + 1, e or "no detail")
             except httpx.HTTPStatusError as e:
                 status = e.response.status_code
+                # A 5xx whose body names an unsupported parameter is a caller
+                # error wearing a server error's status, and retrying sends
+                # the same bad parameter again. It has to escape the ladder so
+                # complete() can strip the parameter and try once without it —
+                # otherwise the 5xx is swallowed here into a ConnectionError,
+                # the HTTPStatusError handler upstream never runs, and no
+                # amount of widening that handler's accepted statuses helps.
+                # Found on Qwen3.8-Flash-Next behind LiteLLM, which answers
+                # chat_template_kwargs with 500.
+                if status >= 500 and self._is_template_kwargs_rejection(e):
+                    logger.warning(
+                        "HTTP %d names an unsupported parameter; not retrying "
+                        "so it can be dropped instead", status)
+                    raise
                 # 429 is transient; other 4xx are caller errors and must not retry.
                 if status != 429 and status < 500:
                     logger.error(

@@ -447,7 +447,32 @@ class TestChatTemplateRejectionPhrasings:
         from controller.inference.openai_backend import OpenAICompatBackend
         assert not OpenAICompatBackend._is_template_kwargs_rejection(self._err(body))
 
-    def test_a_500_is_not_this(self):
+    def test_a_500_that_names_the_parameter_IS_this(self):
+        """This test previously asserted the opposite, on my assumption that a
+        5xx is always a server problem. LiteLLM in front of a llama.cpp
+        backend answers chat_template_kwargs with its own 500:
+
+          litellm.InternalServerError: AsyncCompletions.create() got an
+          unexpected keyword argument 'chat_template_kwargs'
+
+        which is a caller error wearing a server error's status. Retrying it
+        resends the bad parameter, so Qwen3.8-Flash-Next was unusable.
+        """
+        from controller.inference.openai_backend import OpenAICompatBackend
+        assert OpenAICompatBackend._is_template_kwargs_rejection(self._err(
+            "litellm.InternalServerError: AsyncCompletions.create() got an "
+            "unexpected keyword argument 'chat_template_kwargs'", status=500))
+
+    def test_an_ordinary_500_is_still_not_this(self):
+        """The body check is what keeps it narrow: a real server fault must
+        stay retryable."""
+        from controller.inference.openai_backend import OpenAICompatBackend
+        for body in ("internal server error", "upstream connect error",
+                     "CUDA out of memory"):
+            assert not OpenAICompatBackend._is_template_kwargs_rejection(
+                self._err(body, status=500)), body
+
+    def test_a_502_from_a_dead_worker_is_still_retryable(self):
         from controller.inference.openai_backend import OpenAICompatBackend
         assert not OpenAICompatBackend._is_template_kwargs_rejection(
-            self._err("chat_template is not supported", status=500))
+            self._err("Bad Gateway", status=502))

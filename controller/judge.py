@@ -240,7 +240,7 @@ must be exactly "A", "B" or "tie". Finish with a one-paragraph assessment of
 the difference between the two versions."""
 
 
-def build_pairwise_prompt(task, a: str, b: str) -> str:
+def build_pairwise_prompt(task, a: str, b: str, evidence: str = "") -> str:
     """Two versions side by side. Absolute grading is what failed.
 
     Every absolute variant benchmarked at 53-72% against mechanically degraded
@@ -253,6 +253,7 @@ def build_pairwise_prompt(task, a: str, b: str) -> str:
         f"Compare two versions of a protocol document.\n\n"
         f"## Version A\n\n{a}\n\n"
         f"## Version B\n\n{b}\n\n"
+        f"{evidence}"
         f"Compare them on these dimensions:\n\n{task.rubric()}\n"
         + _PAIRWISE_INSTRUCTION
     )

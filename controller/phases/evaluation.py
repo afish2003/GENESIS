@@ -255,11 +255,20 @@ async def _evaluate_pairwise(config, backend, world, cycle, contexts, logger,
     new_is_a = random.random() < 0.5
     a, b = (current, previous) if new_is_a else (previous, current)
 
+    # What each version DID, when the sandbox ran it. Without this the judge
+    # compares two listings by eye: the 2026-09-24 run had 9 of 12 executions
+    # fail and pairwise still reported +2.00 per cycle, because nothing told it
+    # the code did not run. The absolute path has always included the execution
+    # report via the task's own prompt; the pairwise path dropped it, and
+    # `correctness` is the dimension that most depends on it.
+    evidence = _execution_evidence(cycle, new_is_a)
+
     judge = cycle.evaluator_backend or backend
     output = await judge.complete_structured(
         messages=[
             Message(role="system", content=load_judge_system_prompt("pairwise")),
-            Message(role="user", content=build_pairwise_prompt(task, a, b)),
+            Message(role="user",
+                    content=build_pairwise_prompt(task, a, b, evidence)),
         ],
         response_schema=pairwise_schema(task),
         temperature=config.temperature_structured,
@@ -303,3 +312,37 @@ async def _evaluate_pairwise(config, backend, world, cycle, contexts, logger,
         ctx.cycle_events.append(summary_line)
 
     return events
+
+
+def _execution_evidence(cycle, new_is_a: bool) -> str:
+    """How each version behaved when run, labelled by its A/B slot.
+
+    Empty for a task with no execution phase, which is the common case. When
+    there is one, this is the only objective signal in the comparison, and
+    leaving it out let a judge call a version that crashed an improvement.
+    """
+    def describe(result: dict | None) -> str | None:
+        if not result:
+            return None
+        outcome = result.get("outcome", "?")
+        code = result.get("exit_code", "?")
+        text = ((result.get("stderr") or "").strip()
+                or (result.get("stdout") or "").strip() or "(no output)")
+        if len(text) > 600:
+            text = text[:600] + "\n...[clipped]"
+        return f"outcome {outcome}, exit code {code}\n```\n{text}\n```"
+
+    new_run = describe(getattr(cycle, "execution_result", None))
+    old_run = describe(getattr(cycle, "previous_execution", None))
+    if not (new_run or old_run):
+        return ""
+
+    a_run, b_run = (new_run, old_run) if new_is_a else (old_run, new_run)
+    lines = ["## What happened when each version was run\n"]
+    lines.append(f"**Version A**: {a_run or '(not run)'}\n")
+    lines.append(f"**Version B**: {b_run or '(not run)'}\n")
+    lines.append("A version that does not run is not better than one that "
+                 "does, whatever it looks like on the page. Weigh this for "
+                 "correctness above all, and do not let it decide the other "
+                 "dimensions by itself.\n\n")
+    return "\n".join(lines)

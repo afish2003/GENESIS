@@ -62,6 +62,16 @@ enable_thinking: false
 max_output_tokens: 8192
 request_timeout: 300
 
+# Pairwise: each artifact is judged against the one it replaced, better/worse/
+# tie per dimension, rather than given an absolute score. Chosen by benchmark
+# on 2026-09-23 — the same judge ranks at 96.9% against known damage and
+# grades at 87.5%, and three of five dimensions were constants across 71 real
+# evaluations. Writes improvement/quality_index, not total_score.
+#
+# It is also the better thing to watch: "this is better than last cycle's"
+# means something on screen, where "37/50" does not.
+judge_variant: pairwise
+
 # Pressure, on a schedule that fits a run you will actually sit through. The
 # study presets inject nothing, to isolate the memory manipulation; here the
 # scenarios ARE the entertainment. scripts/inject.py adds one on demand.

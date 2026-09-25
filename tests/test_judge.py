@@ -312,3 +312,71 @@ class TestImprovementRespectsTheRandomisedSlot:
         t = create_task(RunConfig(run_id="T", condition="BASELINE"))
         best = {d: "A" for d in t.dimensions}
         assert sum(improvement_from_choices(best, "A").values()) == len(t.dimensions)
+
+
+class TestPairwiseSeesWhatTheCodeDid:
+    """A version that crashed is not an improvement on one that ran.
+
+    The 2026-09-24 run had 9 of 12 executions fail and pairwise still
+    reported +2.00 improvement per cycle, because the comparison showed the
+    judge two listings and nothing about running them. The absolute path had
+    the execution report all along, via the task's own prompt; the pairwise
+    path dropped it, and `correctness` is the dimension that depends on it
+    most.
+    """
+
+    def _evidence(self, new_is_a, current=None, previous=None):
+        from controller.phases.evaluation import _execution_evidence
+
+        class _Cycle:
+            execution_result = current
+            previous_execution = previous
+
+        return _execution_evidence(_Cycle(), new_is_a)
+
+    OK = {"outcome": "OK", "exit_code": 0, "stdout": "all tests passed"}
+    BAD = {"outcome": "NONZERO_EXIT", "exit_code": 1,
+           "stderr": "Traceback: AssertionError"}
+
+    def test_no_execution_means_no_section(self):
+        """A protocol run has no sandbox; it must not gain an empty heading."""
+        assert self._evidence(True) == ""
+
+    def test_the_new_version_is_labelled_by_its_slot(self):
+        ev = self._evidence(True, current=self.BAD, previous=self.OK)
+        a = ev.index("Version A")
+        b = ev.index("Version B")
+        assert "NONZERO_EXIT" in ev[a:b], "A should carry the new version's result"
+        assert "OK" in ev[b:]
+
+    def test_the_slot_labels_swap_with_the_slot(self):
+        ev = self._evidence(False, current=self.BAD, previous=self.OK)
+        a, b = ev.index("Version A"), ev.index("Version B")
+        assert "OK" in ev[a:b], "A should carry the PREVIOUS result when new is B"
+        assert "NONZERO_EXIT" in ev[b:]
+
+    def test_a_missing_side_is_marked_not_run(self):
+        ev = self._evidence(True, current=self.OK, previous=None)
+        assert "(not run)" in ev
+
+    def test_the_traceback_reaches_the_judge(self):
+        ev = self._evidence(True, current=self.BAD, previous=self.OK)
+        assert "AssertionError" in ev
+
+    def test_long_output_is_clipped(self):
+        noisy = {"outcome": "NONZERO_EXIT", "exit_code": 1, "stderr": "x" * 5000}
+        ev = self._evidence(True, current=noisy, previous=self.OK)
+        assert "clipped" in ev and len(ev) < 2000
+
+    def test_it_says_not_to_let_execution_decide_every_dimension(self):
+        """Clarity and testing are not settled by an exit code."""
+        ev = self._evidence(True, current=self.BAD, previous=self.OK)
+        assert "do not let it decide the other" in ev
+
+    def test_the_prompt_carries_the_evidence_through(self):
+        from controller.judge import build_pairwise_prompt
+        t = create_task(RunConfig(run_id="T", condition="BASELINE", task="code"))
+        p = build_pairwise_prompt(t, "AAA", "BBB", evidence="MARKER-EVIDENCE\n\n")
+        assert "MARKER-EVIDENCE" in p and "AAA" in p and "BBB" in p
+        assert p.index("MARKER-EVIDENCE") > p.index("BBB"), \
+            "evidence should follow both versions, not precede them"
